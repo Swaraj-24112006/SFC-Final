@@ -98,7 +98,7 @@ export default function RedFlagSheetForm({
   );
   const [activeRole, setActiveRole] = useState<RedFlagRole>(currentRole);
   const { actions, currentUser, showDevRoleSwitch } = useRedFlag();
-  const { plants } = useRedFlagLookups();
+  const { plants, config } = useRedFlagLookups();
   const [beforeAttachmentId, setBeforeAttachmentId] = useState<string | null>(null);
   const [afterAttachmentId, setAfterAttachmentId] = useState<string | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
@@ -150,23 +150,23 @@ export default function RedFlagSheetForm({
     return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
   };
 
-  const [raisedBy, setRaisedBy] = useState('Rajesh Patil (Shift In-charge)');
-  const [raisedByDepartment, setRaisedByDepartment] = useState('Production');
-  const [raisedByRole, setRaisedByRole] = useState('Shift In-charge');
+  const [raisedBy, setRaisedBy] = useState(currentUser?.label || '');
+  const [raisedByDepartment, setRaisedByDepartment] = useState(currentUser?.department || '');
+  const [raisedByRole, setRaisedByRole] = useState(currentUser?.roles?.[0] || '');
   const [raisedTimestamp, setRaisedTimestamp] = useState(nowFormatted());
 
-  const [targetDepartment, setTargetDepartment] = useState('Maintenance');
-  const [targetPerson, setTargetPerson] = useState('Vikram Singh (Maintenance Lead)');
+  const [targetDepartment, setTargetDepartment] = useState('');
+  const [targetPerson, setTargetPerson] = useState('');
 
-  const [mfName, setMfName] = useState('MF1');
-  const [lineAreaName, setLineAreaName] = useState('Vacuum Pump Line A (Pune)');
-  const [modelName, setModelName] = useState('VP-200 / VP-350');
-  const [stationName, setStationName] = useState('Torqueing Station ST-4');
+  const [mfName, setMfName] = useState('');
+  const [lineAreaName, setLineAreaName] = useState('');
+  const [modelName, setModelName] = useState('');
+  const [stationName, setStationName] = useState('');
 
-  const [redFlagType, setRedFlagType] = useState<'Quality' | 'Safety' | 'Machine' | 'Process' | 'Material' | '5S'>('Quality');
-  const [redFlagSubType, setRedFlagSubType] = useState('Torque Slippage & Calibration');
-  const [severity, setSeverity] = useState<'Critical (Line Stop)' | 'Major (Quarantine)' | 'Moderate (Rework)'>('Major (Quarantine)');
-  const [category5M, setCategory5M] = useState<'Man' | 'Machine' | 'Method' | 'Material' | 'Measurement' | 'Environment'>('Machine');
+  const [redFlagType, setRedFlagType] = useState<'Quality' | 'Safety' | 'Machine' | 'Process' | 'Material' | '5S' | ''>('');
+  const [redFlagSubType, setRedFlagSubType] = useState('');
+  const [severity, setSeverity] = useState<'Critical (Line Stop)' | 'Major (Quarantine)' | 'Moderate (Rework)' | ''>('');
+  const [category5M, setCategory5M] = useState<'Man' | 'Machine' | 'Method' | 'Material' | 'Measurement' | 'Environment' | ''>('');
   const [repetitiveOccurrence, setRepetitiveOccurrence] = useState<'First Time' | 'Repetitive'>('First Time');
 
   const [redFlagDescription, setRedFlagDescription] = useState('');
@@ -178,7 +178,20 @@ export default function RedFlagSheetForm({
       setQaCustodian(selectedPlantObj.defaultQaCustodianLabel);
     }
   }, [activeFlag, qaCustodian, selectedPlantObj]);
-  const [targetDate, setTargetDate] = useState(new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+  const defaultDays = config?.defaultTargetDays ?? (config as any)?.default_target_days ?? 5;
+  const [targetDate, setTargetDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + defaultDays);
+    return d.toISOString().split('T')[0];
+  });
+
+  useEffect(() => {
+    if (!activeFlag && currentUser) {
+      if (!raisedBy && currentUser.label) setRaisedBy(currentUser.label);
+      if (!raisedByDepartment && currentUser.department) setRaisedByDepartment(currentUser.department);
+      if (!raisedByRole && currentUser.roles?.[0]) setRaisedByRole(currentUser.roles[0]);
+    }
+  }, [currentUser, activeFlag]);
 
   // ============================================================================
   // STAGE 2 STATE: CONTAINMENT ACTION & QUARANTINE (BY TARGET PERSON)
@@ -187,7 +200,12 @@ export default function RedFlagSheetForm({
   const [containmentTimestamp, setContainmentTimestamp] = useState(nowFormatted());
   const [suspectQtyQuarantined, setSuspectQtyQuarantined] = useState<number>(0);
   const [quarantineTagNo, setQuarantineTagNo] = useState('');
-  const [quarantineLocation, setQuarantineLocation] = useState('MF1 Red Hold Quarantine Bay');
+  const [quarantineLocation, setQuarantineLocation] = useState('');
+  useEffect(() => {
+    if (!activeFlag && selectedPlantObj?.defaultQuarantineLocation && !quarantineLocation) {
+      setQuarantineLocation(selectedPlantObj.defaultQuarantineLocation);
+    }
+  }, [selectedPlantObj, activeFlag, quarantineLocation]);
   const [sortingQtyInspected, setSortingQtyInspected] = useState<number>(0);
   const [sortingQtyOk, setSortingQtyOk] = useState<number>(0);
   const [sortingQtyRejected, setSortingQtyRejected] = useState<number>(0);
@@ -217,13 +235,13 @@ export default function RedFlagSheetForm({
   // Sync state when activeFlag changes
   useEffect(() => {
     if (activeFlag) {
-      setTargetActionBy(activeFlag.actionTakenBy || activeFlag.targetPerson || 'Vikram Singh (Target Lead)');
+      setTargetActionBy(activeFlag.actionTakenBy || activeFlag.targetPerson || '');
       setContainmentTimestamp(
         activeFlag.containmentTimestamp ? activeFlag.containmentTimestamp.replace(' ', 'T') : nowFormatted()
       );
       setSuspectQtyQuarantined(activeFlag.suspectQtyQuarantined || 0);
       setQuarantineTagNo(activeFlag.quarantineTagNo || `QT-${activeFlag.redFlagNo}`);
-      setQuarantineLocation(activeFlag.quarantineLocation || `${activeFlag.mfName || 'MF1'} Red Hold Quarantine Cage`);
+      setQuarantineLocation(activeFlag.quarantineLocation || '');
       setSortingQtyInspected(activeFlag.sortingQtyInspected || (activeFlag.suspectQtyQuarantined ? activeFlag.suspectQtyQuarantined * 3 : 0));
       setSortingQtyOk(activeFlag.sortingQtyOk || (activeFlag.suspectQtyQuarantined ? activeFlag.suspectQtyQuarantined * 2 : 0));
       setSortingQtyRejected(activeFlag.sortingQtyRejected || activeFlag.suspectQtyQuarantined || 0);
@@ -802,9 +820,10 @@ export default function RedFlagSheetForm({
                       onChange={(e) => setRaisedByDepartment(e.target.value)}
                       className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium outline-none"
                     >
+                      <option value="">Select Originator Dept...</option>
                       <option value="Production">Production</option>
                       <option value="Quality">Quality / QA</option>
-                      <option value="Maintenance">Maintenance</option>
+                    <option value="Maintenance">Maintenance</option>
                       <option value="Safety & EHS">Safety &amp; EHS</option>
                       <option value="Logistics & Stores">Logistics &amp; Stores</option>
                       <option value="Tooling & Die">Tooling &amp; Die</option>
@@ -837,6 +856,7 @@ export default function RedFlagSheetForm({
                     onChange={(e) => setTargetDepartment(e.target.value)}
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 outline-none"
                   >
+                    <option value="">Select Target Dept...</option>
                     <option value="Maintenance">Maintenance</option>
                     <option value="Production">Production</option>
                     <option value="Tooling & Die">Tooling &amp; Die</option>
@@ -852,7 +872,7 @@ export default function RedFlagSheetForm({
                     required
                     value={targetPerson}
                     onChange={(e) => setTargetPerson(e.target.value)}
-                    placeholder="e.g. Vikram Singh (Maintenance Lead)"
+                    placeholder="Target Department Lead"
                     className="w-full px-3 py-2 bg-amber-50/40 border border-amber-300 rounded-xl text-xs font-bold text-slate-900 outline-none focus:bg-white"
                   />
                   <span className="text-[10px] text-amber-800 font-medium block mt-1">
@@ -877,6 +897,7 @@ export default function RedFlagSheetForm({
                   onChange={(e) => setMfName(e.target.value)}
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold outline-none"
                 >
+                  <option value="">Select Mini-Factory...</option>
                   <option value="MF1">MF1 (Assembly &amp; Testing)</option>
                   <option value="MF2">MF2 (Machining &amp; CNC)</option>
                   <option value="MF3">MF3 (Moulding &amp; Tooling)</option>
@@ -922,6 +943,7 @@ export default function RedFlagSheetForm({
                   onChange={(e) => setRedFlagType(e.target.value as any)}
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold outline-none"
                 >
+                  <option value="">Select Red Flag Type...</option>
                   <option value="Quality">Quality (Defect/Spec)</option>
                   <option value="Machine">Machine Breakdown</option>
                   <option value="Process">Process Parameter</option>
@@ -937,6 +959,7 @@ export default function RedFlagSheetForm({
                   onChange={(e) => setCategory5M(e.target.value as any)}
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold outline-none"
                 >
+                  <option value="">Select 5M Category...</option>
                   <option value="Machine">Machine (Tool/Fixture/Sensor)</option>
                   <option value="Method">Method (Standard/Process)</option>
                   <option value="Material">Material (Vendor/Raw Stock)</option>
@@ -952,6 +975,7 @@ export default function RedFlagSheetForm({
                   onChange={(e) => setSeverity(e.target.value as any)}
                   className="w-full px-3 py-2 bg-rose-50 border border-rose-300 text-rose-700 rounded-xl text-xs font-bold outline-none"
                 >
+                  <option value="">Select Severity...</option>
                   <option value="Critical (Line Stop)">Critical (Line Stop)</option>
                   <option value="Major (Quarantine)">Major (Quarantine Lot)</option>
                   <option value="Moderate (Rework)">Moderate (Rework)</option>

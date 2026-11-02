@@ -71,8 +71,8 @@ export default function RedFlagActionModal({
   const [formData, setFormData] = useState({
     // Originator & Target (Anyone on Anyone)
     raisedBy: redFlag.raisedBy || '',
-    raisedByDepartment: redFlag.raisedByDepartment || 'Production',
-    targetDepartment: redFlag.targetDepartment || 'Production',
+    raisedByDepartment: redFlag.raisedByDepartment || '',
+    targetDepartment: redFlag.targetDepartment || '',
     targetPerson: redFlag.targetPerson || redFlag.teamLeader || '',
     qaCustodian: redFlag.qaCustodian || '',
     qaCustodianNotes: redFlag.qaCustodianNotes || '',
@@ -741,7 +741,7 @@ export default function RedFlagActionModal({
                     type="text"
                     value={formData.actionTakenBy}
                     onChange={(e) => setFormData({ ...formData, actionTakenBy: e.target.value })}
-                    placeholder="e.g. Vikram Singh (Target Lead)"
+                    placeholder="Target Department Lead"
                     className="w-full text-xs font-bold px-3 py-2 border border-slate-300 rounded focus:border-slate-900 outline-none"
                   />
                 </div>
