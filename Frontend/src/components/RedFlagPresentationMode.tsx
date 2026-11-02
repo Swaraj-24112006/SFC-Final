@@ -1102,7 +1102,7 @@ export default function RedFlagPresentationMode({
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                       <span className="text-[10px] text-slate-400 uppercase block font-bold">Plant Operations Head</span>
                       <span className="font-bold text-slate-900 mt-1 block">
-                        {redFlag.approvedByProduction || 'Amit Mehta (Plant Head)'}
+                        {redFlag.approvedByProduction || '—'}
                       </span>
                       <span className="text-[10px] text-slate-500 block mt-0.5">Joint Concurrence</span>
                     </div>

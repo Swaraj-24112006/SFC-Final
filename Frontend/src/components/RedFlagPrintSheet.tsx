@@ -314,7 +314,7 @@ export default function RedFlagPrintSheet({ redFlag, onClose }: RedFlagPrintShee
 
               <div className="p-2 space-y-3">
                 <span className="text-[9px] uppercase font-bold text-slate-500 block">PLANT OPERATIONS HEAD:</span>
-                <div className="font-bold text-slate-800">{redFlag.approvedByProduction || 'Amit Mehta (Plant Head)'}</div>
+                <div className="font-bold text-slate-800">{redFlag.approvedByProduction || '—'}</div>
                 <div className="text-[10px] text-slate-500">
                   {redFlag.status === 'Closed' ? 'Final Closure Authorized' : 'Pending 3M Sustenance'}
                 </div>

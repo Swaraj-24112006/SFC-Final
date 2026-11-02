@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { RedFlag, MonthSustenanceCheck, RedFlagRole } from '../types';
 import CameraModal from './CameraModal';
-import { useRedFlag } from '../context/RedFlagContext';
+import { useRedFlag, useRedFlagLookups } from '../context/RedFlagContext';
 import * as api from '../api/redflags';
 
 interface RedFlagActionModalProps {
@@ -62,6 +62,8 @@ export default function RedFlagActionModal({
   const [saveToast, setSaveToast] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const { actions, currentUser, showDevRoleSwitch } = useRedFlag();
+  const { plants } = useRedFlagLookups();
+  const currentPlant = plants.find(p => p.code === redFlag.mfName || p.name === redFlag.mfName);
   const [earlyCloseDialogOpen, setEarlyCloseDialogOpen] = useState<boolean>(false);
   const [earlyCloseReasonInput, setEarlyCloseReasonInput] = useState<string>('');
 
@@ -140,7 +142,7 @@ export default function RedFlagActionModal({
     closureEvidence: redFlag.closureEvidence || '',
     closureDate: redFlag.closureDate || '',
     approvedByQA: redFlag.approvedByQA || '',
-    approvedByProduction: redFlag.approvedByProduction || '',
+    approvedByProduction: redFlag.approvedByProduction || currentPlant?.plantHeadLabel || '',
     status: redFlag.status || 'Open'
   });
 
@@ -1327,7 +1329,8 @@ export default function RedFlagActionModal({
                         </label>
                         <input
                           type="text"
-                          value={formData.approvedByProduction || 'Amit Mehta (Plant Head)'}
+                          value={formData.approvedByProduction || ''}
+                          placeholder="Plant Operations Head Sign-Off"
                           onChange={(e) => setFormData({ ...formData, approvedByProduction: e.target.value })}
                           className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded focus:border-slate-900 outline-none font-bold"
                         />
