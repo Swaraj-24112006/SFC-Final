@@ -1014,7 +1014,7 @@ export default function RedFlagSystem({
                               )}
                             </div>
                             <span className="text-[10px] font-mono text-slate-500 block mt-0.5">
-                              {rf.containmentTimeGap || (rf.status === 'Open' ? 'Gap: Open' : 'Gap: 1h 15m')}
+                              {rf.containmentTimeGap || (rf.status === 'Open' ? 'Pending' : '—')}
                             </span>
                           </td>
 

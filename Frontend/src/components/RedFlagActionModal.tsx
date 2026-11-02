@@ -89,13 +89,13 @@ export default function RedFlagActionModal({
     targetDate: redFlag.targetDate || '',
 
     // Containment & Quarantine Controls (By Target Person)
-    raisedTimestamp: redFlag.raisedTimestamp || `${redFlag.raisedDate} 08:30`,
+    raisedTimestamp: redFlag.raisedTimestamp || redFlag.raisedDate || '',
     containmentTimestamp: redFlag.containmentTimestamp || new Date().toISOString().replace('T', ' ').substring(0, 16),
-    containmentTimeGap: redFlag.containmentTimeGap || '1h 15m gap',
+    containmentTimeGap: redFlag.containmentTimeGap || '',
     containmentStatus: redFlag.containmentStatus || 'Pending',
     suspectQtyQuarantined: redFlag.suspectQtyQuarantined || 0,
     quarantineTagNo: redFlag.quarantineTagNo || `QT-${redFlag.redFlagNo}`,
-    quarantineLocation: redFlag.quarantineLocation || `${redFlag.mfName || 'MF1'} Red Hold Quarantine Cage`,
+    quarantineLocation: redFlag.quarantineLocation || '',
     sortingQtyInspected: redFlag.sortingQtyInspected || 0,
     sortingQtyOk: redFlag.sortingQtyOk || 0,
     sortingQtyRejected: redFlag.sortingQtyRejected || 0,
@@ -681,7 +681,7 @@ export default function RedFlagActionModal({
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="bg-slate-900 text-amber-400 px-3 py-1.5 rounded font-mono text-[11px] font-bold">
-                    Time Gap: {formData.containmentTimeGap || '1h 15m gap'}
+                    Time Gap: {formData.containmentTimeGap || '—'}
                   </div>
                   <div className="text-right">
                     <span className="text-[10px] text-amber-700 block uppercase font-bold">Status</span>

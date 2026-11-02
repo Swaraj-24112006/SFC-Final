@@ -56,11 +56,11 @@ export function computeTimeGapLabel(raisedTs?: string, containmentTs?: string): 
   const d1 = new Date(raisedTs.replace(' ', 'T'));
   const d2 = new Date(containmentTs.replace(' ', 'T'));
   if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
-    return '1h 15m (Logged)';
+    return 'Pending';
   }
   const diffMs = Math.max(0, d2.getTime() - d1.getTime());
   const totalMins = Math.round(diffMs / 60000);
-  if (totalMins === 0) return '18 mins';
+  if (totalMins === 0) return '< 1 min';
   const hrs = Math.floor(totalMins / 60);
   const mins = totalMins % 60;
   if (hrs > 0) {
@@ -242,11 +242,11 @@ export default function RedFlagSheetForm({
       setSuspectQtyQuarantined(activeFlag.suspectQtyQuarantined || 0);
       setQuarantineTagNo(activeFlag.quarantineTagNo || `QT-${activeFlag.redFlagNo}`);
       setQuarantineLocation(activeFlag.quarantineLocation || '');
-      setSortingQtyInspected(activeFlag.sortingQtyInspected || (activeFlag.suspectQtyQuarantined ? activeFlag.suspectQtyQuarantined * 3 : 0));
-      setSortingQtyOk(activeFlag.sortingQtyOk || (activeFlag.suspectQtyQuarantined ? activeFlag.suspectQtyQuarantined * 2 : 0));
+      setSortingQtyInspected(activeFlag.sortingQtyInspected || 0);
+      setSortingQtyOk(activeFlag.sortingQtyOk || 0);
       setSortingQtyRejected(activeFlag.sortingQtyRejected || activeFlag.suspectQtyQuarantined || 0);
       setContainmentAction(activeFlag.containmentAction || activeFlag.immediateActionTaken || '');
-      setPhotoAfter(activeFlag.countermeasurePhoto || activeFlag.closureEvidence || presetRedFlagImages.genericAfter);
+      setPhotoAfter(activeFlag.countermeasurePhoto || activeFlag.closureEvidence || '');
 
       setWhy1(activeFlag.why1 || '');
       setWhy2(activeFlag.why2 || '');
@@ -290,16 +290,16 @@ export default function RedFlagSheetForm({
     if (presetType === 'torque') {
       setPhotoBefore(presetRedFlagImages.torqueDefectBefore);
       setRedFlagType('Quality');
-      setRedFlagSubType('Torque Slippage & Calibration');
+      setRedFlagSubType('');
       setSeverity('Major (Quarantine)');
       setCategory5M('Machine');
-      setLineAreaName('Vacuum Pump Line A (Pune)');
-      setStationName('Torqueing Station ST-4');
-      setModelName('VP-200');
-      setRaisedBy('Rajesh Patil (Shift In-charge)');
-      setRaisedByDepartment('Production');
+      setLineAreaName('');
+      setStationName('');
+      setModelName('');
+      setRaisedBy(currentUser?.label || '');
+      setRaisedByDepartment(currentUser?.department || '');
       setTargetDepartment('Maintenance');
-      setTargetPerson('Vikram Singh (Calibration Lead)');
+      setTargetPerson('');
       setRedFlagDescription('Digital torque wrench #TW-04 reading 12.4 Nm on bolt M10 while standard SOP specifies 18.0 Nm (+/- 0.5 Nm). Calibration drift spotted during hourly patrol check. Assigned to Maintenance Lead for immediate containment and WIP quarantine.');
     } else {
       setPhotoBefore(presetRedFlagImages.leakBefore);
@@ -383,7 +383,7 @@ export default function RedFlagSheetForm({
       setError('Initiator must describe the defect/anomaly observed at the station.');
       return;
     }
-    const isBeforePhotoMissing = !photoBefore || photoBefore === presetRedFlagImages.genericBefore;
+    const isBeforePhotoMissing = !beforeAttachmentId && !photoBefore;
     if (isBeforePhotoMissing) {
       setError('Point-of-Defect Photo (T0) is compulsory. Please take a photo, upload a file, or click a Preset.');
       return;
@@ -450,7 +450,7 @@ export default function RedFlagSheetForm({
       return;
     }
 
-    const isAfterPhotoMissing = !photoAfter || photoAfter === presetRedFlagImages.genericAfter;
+    const isAfterPhotoMissing = !afterAttachmentId && !photoAfter;
     if (isAfterPhotoMissing) {
       setError('Target Person must capture/upload the Containment Photo (T1) to prove physical containment.');
       return;
@@ -469,7 +469,7 @@ export default function RedFlagSheetForm({
     }
 
     const formattedContainmentTs = containmentTimestamp.replace('T', ' ');
-    const raisedTs = activeFlag.raisedTimestamp || `${activeFlag.raisedDate} 08:30`;
+    const raisedTs = activeFlag.raisedTimestamp || activeFlag.raisedDate || '';
     const gapLabel = computeTimeGapLabel(raisedTs, formattedContainmentTs);
 
     try {
@@ -1151,7 +1151,7 @@ export default function RedFlagSheetForm({
                     <span>Time Gap (T0➔T1):</span>
                     <strong className="text-amber-400">
                       {computeTimeGapLabel(
-                        activeFlag.raisedTimestamp || `${activeFlag.raisedDate} 08:30`,
+                        activeFlag.raisedTimestamp || activeFlag.raisedDate,
                         containmentTimestamp.replace('T', ' ')
                       )}
                     </strong>

@@ -655,7 +655,7 @@ export default function RedFlagPresentationMode({
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs font-mono space-y-1">
                     <div className="flex justify-between">
                       <span className="text-slate-500 font-bold uppercase">Timestamp (T0):</span>
-                      <span className="font-bold text-rose-700">{redFlag.raisedTimestamp || `${redFlag.raisedDate} 08:30`}</span>
+                      <span className="font-bold text-rose-700">{redFlag.raisedTimestamp || redFlag.raisedDate || '—'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500 font-bold uppercase">Occurrence Frequency:</span>
@@ -738,7 +738,7 @@ export default function RedFlagPresentationMode({
                   <div className="bg-slate-900 text-white px-4 py-2 rounded-xl text-center font-mono">
                     <span className="text-[10px] text-slate-400 block uppercase">Time Gap (T0➔T1)</span>
                     <span className="text-base font-black text-amber-400">
-                      {redFlag.containmentTimeGap || '1h 18m (Within SLA)'}
+                      {redFlag.containmentTimeGap || '—'}
                     </span>
                   </div>
                 </div>
@@ -816,7 +816,7 @@ export default function RedFlagPresentationMode({
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                     <span className="text-[10px] font-mono uppercase text-slate-500 font-bold block">Quarantine Tag No</span>
                     <span className="text-base font-bold font-mono text-slate-900 block mt-1">{redFlag.quarantineTagNo || `QT-${redFlag.redFlagNo}`}</span>
-                    <span className="text-[10px] text-slate-500 mt-0.5 block">{redFlag.quarantineLocation || 'MF1 Red Hold Cage'}</span>
+                    <span className="text-[10px] text-slate-500 mt-0.5 block">{redFlag.quarantineLocation || '—'}</span>
                   </div>
 
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
