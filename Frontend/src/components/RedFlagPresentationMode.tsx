@@ -309,7 +309,7 @@ export default function RedFlagPresentationMode({
               <div className="text-right">
                 <span className="text-[9px] uppercase text-slate-400 block">QA Custodian</span>
                 <span className="font-bold text-rose-300 text-[10px] truncate max-w-[120px] block">
-                  {redFlag.qaCustodian || 'Suresh Kumar'}
+                  {redFlag.qaCustodian || '—'}
                 </span>
               </div>
             </div>
@@ -1072,7 +1072,7 @@ export default function RedFlagPresentationMode({
                     <span>Quality Custodian Authorization &amp; Sign-Off Panel</span>
                   </h3>
                   <span className="text-xs font-mono font-bold text-slate-500">
-                    Custodian: <strong className="text-slate-900">{redFlag.qaCustodian || 'Suresh Kumar (QA)'}</strong>
+                    Custodian: <strong className="text-slate-900">{redFlag.qaCustodian || '—'}</strong>
                   </span>
                 </div>
 
@@ -1095,7 +1095,7 @@ export default function RedFlagPresentationMode({
                     <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
                       <span className="text-[10px] text-slate-400 uppercase block font-bold">QA Custodian Sign</span>
                       <span className="font-bold text-slate-900 mt-1 block">
-                        {redFlag.approvedByQA || redFlag.qaCustodian || 'Suresh Kumar (QA)'}
+                        {redFlag.approvedByQA || redFlag.qaCustodian || '—'}
                       </span>
                       <span className="text-[10px] text-emerald-700 block mt-0.5">Authorized Signatory</span>
                     </div>

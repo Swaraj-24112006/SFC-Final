@@ -25,10 +25,19 @@ class LineLookupSerializer(serializers.ModelSerializer):
 
 class PlantLookupSerializer(serializers.ModelSerializer):
     lines = LineLookupSerializer(many=True, read_only=True)
+    default_qa_custodian_id = serializers.UUIDField(source='default_qa_custodian.id', read_only=True, allow_null=True)
+    default_qa_custodian_label = serializers.CharField(source='default_qa_custodian.label', read_only=True, allow_null=True)
+    plant_head_id = serializers.UUIDField(source='plant_head.id', read_only=True, allow_null=True)
+    plant_head_label = serializers.CharField(source='plant_head.label', read_only=True, allow_null=True)
 
     class Meta:
         model = Plant
-        fields = ['id', 'code', 'name', 'description', 'default_quarantine_location', 'lines']
+        fields = [
+            'id', 'code', 'name', 'description', 'default_quarantine_location',
+            'default_qa_custodian_id', 'default_qa_custodian_label',
+            'plant_head_id', 'plant_head_label',
+            'lines'
+        ]
 
 class DepartmentLookupSerializer(serializers.ModelSerializer):
     class Meta:

@@ -50,7 +50,7 @@ export default function RedFlagActionModal({
   onConvertToKaizen,
   onLinkToFiveS,
   onOpenPrintSheet,
-  currentPersona = 'Suresh Kumar (QA Lead)',
+  currentPersona = '',
   onNavigateToModule,
   currentRole = 'Quality Custodian',
   onRoleChange,
@@ -72,7 +72,7 @@ export default function RedFlagActionModal({
     raisedByDepartment: redFlag.raisedByDepartment || 'Production',
     targetDepartment: redFlag.targetDepartment || 'Production',
     targetPerson: redFlag.targetPerson || redFlag.teamLeader || '',
-    qaCustodian: redFlag.qaCustodian || 'Suresh Kumar (QA Lead)',
+    qaCustodian: redFlag.qaCustodian || '',
     qaCustodianNotes: redFlag.qaCustodianNotes || '',
 
     // Context & Classification
@@ -83,7 +83,7 @@ export default function RedFlagActionModal({
     redFlagDescription: redFlag.redFlagDescription || '',
     evidencePhoto: redFlag.evidencePhoto || '',
     teamLeader: redFlag.teamLeader || '',
-    closureResponsibility: redFlag.closureResponsibility || 'Suresh Kumar (QA Lead)',
+    closureResponsibility: redFlag.closureResponsibility || redFlag.qaCustodian || '',
     targetDate: redFlag.targetDate || '',
 
     // Containment & Quarantine Controls (By Target Person)
@@ -812,7 +812,7 @@ export default function RedFlagActionModal({
                     type="text"
                     value={formData.containmentVerifiedBy}
                     onChange={(e) => setFormData({ ...formData, containmentVerifiedBy: e.target.value })}
-                    placeholder="e.g. Suresh Kumar (QA Custodian)"
+                    placeholder="Quality Verification Sign-Off"
                     className="w-full text-xs px-3 py-2 border border-slate-300 rounded focus:border-slate-900 outline-none"
                   />
                 </div>

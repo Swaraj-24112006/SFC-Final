@@ -24,7 +24,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import CameraModal from './CameraModal';
-import { useRedFlag } from '../context/RedFlagContext';
+import { useRedFlag, useRedFlagLookups } from '../context/RedFlagContext';
 import * as api from '../api/redflags';
 
 interface RedFlagSheetFormProps {
@@ -98,6 +98,7 @@ export default function RedFlagSheetForm({
   );
   const [activeRole, setActiveRole] = useState<RedFlagRole>(currentRole);
   const { actions, currentUser, showDevRoleSwitch } = useRedFlag();
+  const { plants } = useRedFlagLookups();
   const [beforeAttachmentId, setBeforeAttachmentId] = useState<string | null>(null);
   const [afterAttachmentId, setAfterAttachmentId] = useState<string | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
@@ -170,7 +171,13 @@ export default function RedFlagSheetForm({
 
   const [redFlagDescription, setRedFlagDescription] = useState('');
   const [photoBefore, setPhotoBefore] = useState(presetRedFlagImages.genericBefore);
-  const [qaCustodian, setQaCustodian] = useState('Suresh Kumar (QA Lead)');
+  const [qaCustodian, setQaCustodian] = useState('');
+  const selectedPlantObj = plants.find(p => p.code === mfName || p.name === mfName);
+  useEffect(() => {
+    if (!activeFlag && !qaCustodian && selectedPlantObj?.defaultQaCustodianLabel) {
+      setQaCustodian(selectedPlantObj.defaultQaCustodianLabel);
+    }
+  }, [activeFlag, qaCustodian, selectedPlantObj]);
   const [targetDate, setTargetDate] = useState(new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
 
   // ============================================================================
@@ -204,7 +211,7 @@ export default function RedFlagSheetForm({
   // ============================================================================
   // STAGE 4 STATE: QUALITY VERIFICATION & 3-MONTH SUSTENANCE
   // ============================================================================
-  const [qaVerifierName, setQaVerifierName] = useState('Suresh Kumar (QA Custodian)');
+  const [qaVerifierName, setQaVerifierName] = useState(currentUser?.label || '');
   const [qaVerificationNotes, setQaVerificationNotes] = useState('');
 
   // Sync state when activeFlag changes
@@ -235,7 +242,7 @@ export default function RedFlagSheetForm({
       setControlPlanUpdated(activeFlag.standardizationUpdates?.controlPlanUpdated || false);
       setOnePointLessonIssued(activeFlag.standardizationUpdates?.onePointLessonIssued || false);
 
-      setQaVerifierName(activeFlag.qaCustodian || 'Suresh Kumar (QA Custodian)');
+      setQaVerifierName(activeFlag.qaCustodian || currentUser?.label || '');
       setQaVerificationNotes(activeFlag.qaCustodianNotes || '');
     }
   }, [activeFlag?.id]);

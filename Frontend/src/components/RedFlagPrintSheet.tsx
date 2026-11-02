@@ -102,7 +102,7 @@ export default function RedFlagPrintSheet({ redFlag, onClose }: RedFlagPrintShee
               <tr className="border-b border-slate-400">
                 <td className="p-1.5 border-r border-slate-400 font-bold bg-rose-50 text-rose-900">QA CUSTODIAN (OFFICIAL):</td>
                 <td className="p-1.5 border-r border-slate-400 font-bold text-rose-950">
-                  {redFlag.qaCustodian || 'Suresh Kumar (QA Lead)'}
+                  {redFlag.qaCustodian || '—'}
                   <span className="block text-[10px] font-normal text-rose-700">Role: Custodian of Red Flag</span>
                 </td>
                 <td className="p-1.5 border-r border-slate-400 font-bold bg-slate-50">Severity Rating:</td>
@@ -306,7 +306,7 @@ export default function RedFlagPrintSheet({ redFlag, onClose }: RedFlagPrintShee
 
               <div className="p-2 space-y-3 bg-rose-50/30">
                 <span className="text-[9px] uppercase font-bold text-rose-800 block">QA CUSTODIAN (QUALITY):</span>
-                <div className="font-bold text-slate-900">{redFlag.qaCustodian || 'Suresh Kumar (QA Lead)'}</div>
+                <div className="font-bold text-slate-900">{redFlag.qaCustodian || '—'}</div>
                 <div className="text-[10px] text-emerald-700 font-semibold">
                   {redFlag.status === 'Closed' ? 'Approved (3M Passed)' : 'Custodian Oversight Active'}
                 </div>

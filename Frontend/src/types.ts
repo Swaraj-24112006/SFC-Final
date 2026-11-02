@@ -244,6 +244,10 @@ export interface PlantLookup {
   name: string;
   description: string;
   defaultQuarantineLocation: string;
+  defaultQaCustodianId?: string | null;
+  defaultQaCustodianLabel?: string | null;
+  plantHeadId?: string | null;
+  plantHeadLabel?: string | null;
   lines: LineLookup[];
 }
 

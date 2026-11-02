@@ -338,7 +338,7 @@ export default function RedFlagSystem({
                           </span>
                         )}
                       </td>
-                      <td className="p-3 text-right text-slate-300">{rf.qaCustodian || 'Suresh Kumar'}</td>
+                      <td className="p-3 text-right text-slate-300">{rf.qaCustodian || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -729,7 +729,7 @@ export default function RedFlagSystem({
 
                       {/* QA Custodian */}
                       <td className="p-3 font-semibold text-slate-800">
-                        {rf.qaCustodian || 'Suresh Kumar (QA)'}
+                        {rf.qaCustodian || '—'}
                       </td>
 
                       {/* Actions */}
@@ -1036,7 +1036,7 @@ export default function RedFlagSystem({
 
                           {/* 3. Quality Custodian & 3-Month Sustenance */}
                           <td className="p-2.5 whitespace-nowrap">
-                            <span className="font-semibold text-slate-800 block text-[11px]">{rf.qaCustodian || 'Suresh Kumar'}</span>
+                            <span className="font-semibold text-slate-800 block text-[11px]">{rf.qaCustodian || '—'}</span>
                             <div className="flex items-center gap-1 font-mono text-[10px] mt-0.5">
                               <span className={`px-1 rounded ${rf.month1Check?.status === 'Passed' ? 'bg-emerald-100 text-emerald-800 font-bold' : 'bg-slate-100 text-slate-500'}`}>M1</span>
                               <span className={`px-1 rounded ${rf.month2Check?.status === 'Passed' ? 'bg-emerald-100 text-emerald-800 font-bold' : 'bg-slate-100 text-slate-500'}`}>M2</span>
@@ -1188,7 +1188,7 @@ export default function RedFlagSystem({
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                     <span className="text-[10px] font-mono text-slate-500">
-                      QA: {rf.qaCustodian || 'Suresh Kumar'}
+                      QA: {rf.qaCustodian || '—'}
                     </span>
                     <div className="flex items-center gap-1.5">
                       <button

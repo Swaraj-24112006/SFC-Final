@@ -352,3 +352,18 @@ export function useRedFlag() {
   }
   return context;
 }
+
+export function useRedFlagLookups() {
+  const { lookups, currentUser, isLoading } = useRedFlag();
+  return {
+    lookups,
+    currentUser,
+    isLoading,
+    plants: lookups?.plants || [],
+    models: lookups?.models || [],
+    departments: lookups?.departments || [],
+    employees: lookups?.employees || [],
+    enums: lookups?.enums,
+    config: lookups?.config,
+  };
+}
