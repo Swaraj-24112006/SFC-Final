@@ -4,12 +4,12 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 
-from ..models import (
+from redflag.models import (
     RedFlag, RedFlagClosure, Attachment, Employee, StageHistory, RedFlagAuditLog
 )
-from ..enums import Status, QaCustodianStatus, AttachmentKind
-from ..exceptions import UnprocessableEntity
-from ..permissions import user_roles, ROLE_PLANT_HEAD, ROLE_QUALITY_CUSTODIAN, GROUP_PLANT_HEAD
+from redflag.enums import Status, QaCustodianStatus, AttachmentKind
+from redflag.exceptions import UnprocessableEntity
+from redflag.permissions import user_roles, ROLE_PLANT_HEAD, ROLE_QUALITY_CUSTODIAN, GROUP_PLANT_HEAD
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,13 @@ def close_red_flag(flag_id, user, data, ip=None, user_agent=''):
                 )
 
         # 3. Closure evidence photo (mandatory)
-        evidence_id = data.get('closureEvidence') or data.get('closure_evidence') or data.get('closureEvidenceId')
+        evidence_id = (
+            data.get('closureEvidence') or
+            data.get('closure_evidence') or
+            data.get('closureEvidenceId') or
+            data.get('closure_evidence_id') or
+            data.get('closure_photo_attachment_id')
+        )
         evidence_att = None
         if evidence_id:
             try:

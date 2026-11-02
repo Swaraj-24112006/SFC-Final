@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { RedFlag } from '../types';
 import { 
   BarChart3, 
@@ -22,6 +22,8 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { SfcModuleStandardDrillBoard, SfcStandardRecord } from './common/SfcPowerBiShared';
+import { fetchDashboardAnalytics } from '../api/redflags';
+import { RedFlagDashboardAnalytics } from '../types';
 
 interface RedFlagDashboardProps {
   redFlags: RedFlag[];
@@ -70,6 +72,32 @@ export default function RedFlagDashboard({
   const [severityFilter, setSeverityFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [viewMode, setViewMode] = useState<'all' | 'workflow' | 'matrix' | 'pareto' | 'sustenance'>('all');
+  const [dashboardData, setDashboardData] = useState<RedFlagDashboardAnalytics | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadData() {
+      try {
+        const filterParams: Record<string, string> = {};
+        if (plantFilter !== 'ALL') filterParams.plant = plantFilter;
+        if (originatorDeptFilter !== 'ALL') filterParams.originating_dept = originatorDeptFilter;
+        if (targetDeptFilter !== 'ALL') filterParams.target_dept = targetDeptFilter;
+        if (defectTypeFilter !== 'ALL') filterParams.defect_type = defectTypeFilter;
+        if (category5MFilter !== 'ALL') filterParams.category_5m = category5MFilter;
+        if (severityFilter !== 'ALL') filterParams.severity = severityFilter;
+        if (statusFilter !== 'ALL') filterParams.status = statusFilter;
+
+        const data = await fetchDashboardAnalytics(filterParams);
+        if (isMounted) {
+          setDashboardData(data);
+        }
+      } catch (err) {
+        console.error('Failed to load dashboard analytics:', err);
+      }
+    }
+    loadData();
+    return () => { isMounted = false; };
+  }, [plantFilter, originatorDeptFilter, targetDeptFilter, defectTypeFilter, category5MFilter, severityFilter, statusFilter, redFlags]);
 
   // Filtered dataset
   const filteredFlags = useMemo(() => {
@@ -91,124 +119,85 @@ export default function RedFlagDashboard({
   }, [redFlags, plantFilter, originatorDeptFilter, targetDeptFilter, defectTypeFilter, category5MFilter, severityFilter, statusFilter]);
 
   // ============================================================================
-  // 1. CORE KPI & 3-ACTOR WORKFLOW METRICS
+  // 1. CORE KPI & 3-ACTOR WORKFLOW METRICS (SERVER-SIDE SQL AGGREGATIONS)
   // ============================================================================
-  const totalCount = filteredFlags.length;
-  const stage1PendingTargetCount = filteredFlags.filter(
+  const totalCount = dashboardData?.kpis.total ?? filteredFlags.length;
+  const stage1PendingTargetCount = dashboardData?.kpis.stage1PendingTarget ?? filteredFlags.filter(
     r => r.status === 'Open' || r.containmentStatus === 'Pending'
   ).length;
-  const stage2PendingQualityCount = filteredFlags.filter(
+  const stage2PendingQualityCount = dashboardData?.kpis.stage2PendingQuality ?? filteredFlags.filter(
     r => r.status === 'Contained' && r.containmentStatus !== 'Verified'
   ).length;
-  const stage2VerifiedContainmentCount = filteredFlags.filter(
+  const stage2VerifiedContainmentCount = dashboardData?.kpis.containmentVerifiedCount ?? filteredFlags.filter(
     r => r.containmentStatus === 'Verified' || r.status === 'Under-Sustenance' || r.status === 'Closed'
   ).length;
-  const inSustenanceCount = filteredFlags.filter(
+  const inSustenanceCount = dashboardData?.kpis.underSustenanceCount ?? filteredFlags.filter(
     r => r.status === 'Under-Sustenance' || (r.sustenanceStartDate && !r.sustenanceAchieved && r.status !== 'Closed')
   ).length;
-  const closedCount = filteredFlags.filter(
+  const closedCount = dashboardData?.kpis.closedCount ?? filteredFlags.filter(
     r => r.status === 'Closed' || r.sustenanceAchieved
   ).length;
-  const criticalCount = filteredFlags.filter(r => r.severity?.includes('Critical')).length;
+  const criticalCount = dashboardData?.kpis.criticalCount ?? filteredFlags.filter(r => r.severity?.includes('Critical')).length;
 
-  // Quarantine & 100% Sorting Metrics
-  const totalQuarantinedWIP = filteredFlags.reduce((sum, r) => sum + (r.suspectQtyQuarantined || 0), 0);
-  const totalSortingInspected = filteredFlags.reduce(
-    (sum, r) => sum + (r.sortingQtyInspected || (r.suspectQtyQuarantined ? r.suspectQtyQuarantined * 3 : 0)),
-    0
-  );
-  const totalSortingOk = filteredFlags.reduce(
-    (sum, r) => sum + (r.sortingQtyOk || (r.suspectQtyQuarantined ? r.suspectQtyQuarantined * 2 : 0)),
-    0
-  );
-  const totalSortingRejected = filteredFlags.reduce(
-    (sum, r) => sum + (r.sortingQtyRejected || r.suspectQtyQuarantined || 0),
-    0
-  );
+  // Quarantine & 100% Sorting Metrics (Real server SQL sums, no estimates)
+  const totalQuarantinedWIP = dashboardData?.quarantine.suspectQtyQuarantined ?? filteredFlags.reduce((sum, r) => sum + (r.suspectQtyQuarantined || 0), 0);
+  const totalSortingInspected = dashboardData?.quarantine.sortingQtyInspected ?? filteredFlags.reduce((sum, r) => sum + (r.sortingQtyInspected || 0), 0);
+  const totalSortingOk = dashboardData?.quarantine.sortingQtyOk ?? filteredFlags.reduce((sum, r) => sum + (r.sortingQtyOk || 0), 0);
+  const totalSortingRejected = dashboardData?.quarantine.sortingQtyRejected ?? filteredFlags.reduce((sum, r) => sum + (r.sortingQtyRejected || 0), 0);
 
-  // Time Gap (T0 -> T1) SLA Analytics
+  // Time Gap (T0 -> T1) SLA Analytics (Computed server-side)
   const timeGapStats = useMemo(() => {
-    const gaps: number[] = [];
-    const buckets = {
-      under30m: 0,
-      from30to60m: 0,
-      from60to120m: 0,
-      over120m: 0,
-      pending: 0
-    };
-
-    filteredFlags.forEach(rf => {
-      const mins = parseTimeGapMinutes(rf);
-      if (mins === null) {
-        buckets.pending++;
-      } else {
-        gaps.push(mins);
-        if (mins <= 30) buckets.under30m++;
-        else if (mins <= 60) buckets.from30to60m++;
-        else if (mins <= 120) buckets.from60to120m++;
-        else buckets.over120m++;
-      }
-    });
-
-    const avgMins = gaps.length > 0 ? Math.round(gaps.reduce((a, b) => a + b, 0) / gaps.length) : 0;
-    const withinSlaCount = buckets.under30m + buckets.from30to60m + buckets.from60to120m;
-    const slaCompliancePct = gaps.length > 0 ? Math.round((withinSlaCount / gaps.length) * 100) : 100;
-
-    const hrs = Math.floor(avgMins / 60);
-    const remMins = avgMins % 60;
-    const avgLabel = avgMins === 0 ? 'N/A' : hrs > 0 ? `${hrs}h ${remMins}m` : `${remMins}m`;
-
-    return { avgMins, avgLabel, slaCompliancePct, buckets, completedCount: gaps.length };
-  }, [filteredFlags]);
+    if (dashboardData?.timeGap) {
+      const tg = dashboardData.timeGap;
+      const hrs = Math.floor(tg.avgMinutes / 60);
+      const remMins = tg.avgMinutes % 60;
+      const avgLabel = tg.avgMinutes === 0 ? 'N/A' : hrs > 0 ? `${hrs}h ${remMins}m` : `${remMins}m`;
+      const bucketMap: Record<string, number> = {};
+      tg.buckets.forEach(b => {
+        bucketMap[b.label] = b.count;
+      });
+      return {
+        avgMins: tg.avgMinutes,
+        avgLabel,
+        slaCompliancePct: tg.slaCompliancePct,
+        buckets: {
+          under30m: bucketMap['< 30 mins'] || 0,
+          from30to60m: bucketMap['30 - 60 mins'] || 0,
+          from60to120m: bucketMap['1 - 2 hours'] || 0,
+          over120m: bucketMap['> 2 hours (Breach)'] || 0,
+          pending: (dashboardData.kpis.stage1PendingTarget || 0)
+        },
+        completedCount: tg.completedCount
+      };
+    }
+    return { avgMins: 0, avgLabel: 'N/A', slaCompliancePct: 100, buckets: { under30m: 0, from30to60m: 0, from60to120m: 0, over120m: 0, pending: 0 }, completedCount: 0 };
+  }, [dashboardData]);
 
   // Containment completion rate
-  const containmentRate = totalCount > 0
+  const containmentRate = dashboardData?.kpis.containmentRatePct ?? (totalCount > 0
     ? Math.round(((totalCount - stage1PendingTargetCount) / totalCount) * 100)
-    : 100;
+    : 100);
 
   // Cross-Module Escalation Counts
-  const linkedPpsrCount = filteredFlags.filter(r => r.linkedPpsrId || r.linkedPpsrNo).length;
-  const linkedKaizenCount = filteredFlags.filter(r => r.linkedKaizenId || r.linkedKaizenNo).length;
-  const linkedFiveSCount = filteredFlags.filter(r => r.linkedFiveSRedTagId || r.linkedFiveSRedTagNo).length;
+  const linkedPpsrCount = dashboardData?.kpis.linkedPpsrCount ?? filteredFlags.filter(r => r.linkedPpsrId || r.linkedPpsrNo).length;
+  const linkedKaizenCount = dashboardData?.kpis.linkedKaizenCount ?? filteredFlags.filter(r => r.linkedKaizenId || r.linkedKaizenNo).length;
+  const linkedFiveSCount = dashboardData?.kpis.linkedFiveSRedTagCount ?? filteredFlags.filter(r => r.linkedFiveSRedTagId || r.linkedFiveSRedTagNo).length;
 
   // ============================================================================
   // 2. 5M PARETO (RANKED WITH CUMULATIVE %) & DEFECT TYPE BREAKDOWN
   // ============================================================================
   const pareto5M = useMemo(() => {
-    const counts: Record<string, { count: number; quarantined: number }> = {
-      Machine: { count: 0, quarantined: 0 },
-      Method: { count: 0, quarantined: 0 },
-      Material: { count: 0, quarantined: 0 },
-      Man: { count: 0, quarantined: 0 },
-      Measurement: { count: 0, quarantined: 0 },
-      Environment: { count: 0, quarantined: 0 }
-    };
-
-    filteredFlags.forEach(r => {
-      const cat = r.category5M || 'Method';
-      if (!counts[cat]) counts[cat] = { count: 0, quarantined: 0 };
-      counts[cat].count++;
-      counts[cat].quarantined += r.suspectQtyQuarantined || 0;
-    });
-
-    const sorted = Object.entries(counts)
-      .map(([category, data]) => ({
-        category,
-        count: data.count,
-        quarantined: data.quarantined,
-        pct: totalCount > 0 ? Math.round((data.count / totalCount) * 100) : 0
-      }))
-      .sort((a, b) => b.count - a.count);
-
-    let runningCount = 0;
-    return sorted.map(item => {
-      runningCount += item.count;
-      return {
-        ...item,
-        cumulativePct: totalCount > 0 ? Math.round((runningCount / totalCount) * 100) : 0
-      };
-    });
-  }, [filteredFlags, totalCount]);
+    if (dashboardData?.pareto5M && dashboardData.pareto5M.length > 0) {
+      return dashboardData.pareto5M.map(item => ({
+        category: item.category,
+        count: item.count,
+        quarantined: 0,
+        pct: item.pct,
+        cumulativePct: item.cumulativePct
+      }));
+    }
+    return [];
+  }, [dashboardData]);
 
   // Defect Type Distribution
   const defectTypeStats = useMemo(() => {
@@ -238,99 +227,58 @@ export default function RedFlagDashboard({
       });
     });
 
-    filteredFlags.forEach(rf => {
-      const orig = departments.find(d => rf.raisedByDepartment?.includes(d.split(' ')[0])) || 'Production';
-      const tgt = departments.find(d => (rf.targetDepartment || rf.responsibleDepartment)?.includes(d.split(' ')[0])) || 'Maintenance';
-      if (matrix[orig] && matrix[orig][tgt] !== undefined) {
-        matrix[orig][tgt]++;
-      }
-    });
+    if (dashboardData?.matrix) {
+      dashboardData.matrix.forEach(m => {
+        const orig = departments.find(d => m.originatingDept?.includes(d.split(' ')[0])) || m.originatingDept;
+        const tgt = departments.find(d => m.targetDept?.includes(d.split(' ')[0])) || m.targetDept;
+        if (!matrix[orig]) matrix[orig] = {};
+        matrix[orig][tgt] = m.count;
+      });
+    } else {
+      filteredFlags.forEach(rf => {
+        const orig = departments.find(d => rf.raisedByDepartment?.includes(d.split(' ')[0])) || 'Production';
+        const tgt = departments.find(d => (rf.targetDepartment || rf.responsibleDepartment)?.includes(d.split(' ')[0])) || 'Maintenance';
+        if (matrix[orig] && matrix[orig][tgt] !== undefined) {
+          matrix[orig][tgt]++;
+        }
+      });
+    }
     return matrix;
-  }, [filteredFlags]);
+  }, [dashboardData, filteredFlags]);
 
   // Target Person Accountability & Containment Leaderboard
   const targetPersonStats = useMemo(() => {
-    const map: Record<string, {
-      name: string;
-      dept: string;
-      totalAssigned: number;
-      pendingContainment: number;
-      containedCount: number;
-      verifiedByQaCount: number;
-      quarantinedPcs: number;
-      avgGapMins: number;
-      gapSamples: number;
-    }> = {};
-
-    filteredFlags.forEach(rf => {
-      const person = rf.targetPerson || `${rf.targetDepartment || 'Production'} Lead`;
-      const dept = rf.targetDepartment || rf.responsibleDepartment || 'Production';
-      if (!map[person]) {
-        map[person] = {
-          name: person,
-          dept,
-          totalAssigned: 0,
-          pendingContainment: 0,
-          containedCount: 0,
-          verifiedByQaCount: 0,
-          quarantinedPcs: 0,
-          avgGapMins: 0,
-          gapSamples: 0
-        };
-      }
-      const entry = map[person];
-      entry.totalAssigned++;
-      entry.quarantinedPcs += rf.suspectQtyQuarantined || 0;
-      if (rf.status === 'Open' || rf.containmentStatus === 'Pending') {
-        entry.pendingContainment++;
-      } else {
-        entry.containedCount++;
-      }
-      if (rf.containmentStatus === 'Verified' || rf.status === 'Under-Sustenance' || rf.status === 'Closed') {
-        entry.verifiedByQaCount++;
-      }
-      const gap = parseTimeGapMinutes(rf);
-      if (gap !== null) {
-        entry.avgGapMins = Math.round(((entry.avgGapMins * entry.gapSamples) + gap) / (entry.gapSamples + 1));
-        entry.gapSamples++;
-      }
-    });
-
-    return Object.values(map).sort((a, b) => b.totalAssigned - a.totalAssigned);
-  }, [filteredFlags]);
+    if (dashboardData?.targetPeople && dashboardData.targetPeople.length > 0) {
+      return dashboardData.targetPeople.map(tp => ({
+        name: tp.name,
+        dept: tp.dept,
+        totalAssigned: tp.total,
+        pendingContainment: tp.open,
+        containedCount: tp.contained,
+        verifiedByQaCount: tp.closed,
+        quarantinedPcs: 0,
+        avgGapMins: 0,
+        gapSamples: 0
+      }));
+    }
+    return [];
+  }, [dashboardData]);
 
   // Station / Line Hotspot Analytics
   const stationHotspots = useMemo(() => {
-    const map: Record<string, {
-      station: string;
-      line: string;
-      mf: string;
-      count: number;
-      openCount: number;
-      quarantined: number;
-      dominant5M: string;
-    }> = {};
-
-    filteredFlags.forEach(rf => {
-      const key = `${rf.stationName}__${rf.lineAreaName}`;
-      if (!map[key]) {
-        map[key] = {
-          station: rf.stationName,
-          line: rf.lineAreaName,
-          mf: rf.mfName || 'MF1',
-          count: 0,
-          openCount: 0,
-          quarantined: 0,
-          dominant5M: rf.category5M || 'Machine'
-        };
-      }
-      map[key].count++;
-      if (rf.status === 'Open') map[key].openCount++;
-      map[key].quarantined += rf.suspectQtyQuarantined || 0;
-    });
-
-    return Object.values(map).sort((a, b) => b.count - a.count).slice(0, 6);
-  }, [filteredFlags]);
+    if (dashboardData?.stationHotspots && dashboardData.stationHotspots.length > 0) {
+      return dashboardData.stationHotspots.map(sh => ({
+        station: sh.station,
+        line: sh.line,
+        mf: sh.plant,
+        count: sh.count,
+        openCount: 0,
+        quarantined: 0,
+        dominant5M: 'Method'
+      }));
+    }
+    return [];
+  }, [dashboardData]);
 
   // ============================================================================
   // 4. 3-MONTH SUSTENANCE COHORT ANALYTICS (30D / 60D / 90D)

@@ -15,7 +15,7 @@ from ..permissions import user_roles, ROLE_PLANT_HEAD, ROLE_QUALITY_CUSTODIAN
 logger = logging.getLogger(__name__)
 
 
-def start_sustenance(flag_id, user, notes='', standardization_updates=None, ip=None, user_agent=''):
+def start_sustenance(flag_id, user, notes='', standardization_updates=None, start_date=None, ip=None, user_agent=''):
     """
     Quality Custodian verifies CAPA and initiates the 3-month (30/60/90 days) sustenance watch.
     Creates 3 SustenanceCheck rows for the current cycle.
@@ -81,8 +81,12 @@ def start_sustenance(flag_id, user, notes='', standardization_updates=None, ip=N
                 root_cause_obj.opl_issued = bool(standardization_updates['onePointLessonIssued'])
             root_cause_obj.save()
 
-        # 2. Schedule dates for 3 checks (default 30, 60, 90 days from today)
-        start_date = timezone.localdate()
+        # 2. Schedule dates for 3 checks (default 30, 60, 90 days from start_date)
+        if start_date is None:
+            start_date = timezone.localdate()
+        elif isinstance(start_date, str):
+            start_date = date.fromisoformat(start_date)
+
         check_days = config.sustenance_check_days if len(config.sustenance_check_days) == 3 else [30, 60, 90]
 
         for idx, days_offset in enumerate(check_days, start=1):

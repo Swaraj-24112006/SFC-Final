@@ -767,3 +767,16 @@ class PresentationDataResponseSerializer(serializers.Serializer):
     allowed_actions = serializers.ListField(child=serializers.CharField())
 
 
+class ServiceStatusSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    error = serializers.CharField(allow_null=True, required=False)
+
+
+class HealthCheckResponseSerializer(serializers.Serializer):
+    status = serializers.CharField()
+    database = ServiceStatusSerializer()
+    minio = ServiceStatusSerializer()
+    timestamp = serializers.DateTimeField()
+
+
+

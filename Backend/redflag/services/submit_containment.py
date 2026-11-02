@@ -114,7 +114,13 @@ def submit_containment(flag_id, user, data, ip=None, user_agent=''):
             raise UnprocessableEntity({'containmentAction': 'Immediate containment action description is required.'})
 
         # 6. Countermeasure Photo (T1)
-        photo_att_id = data.get('countermeasurePhotoId') or data.get('countermeasure_photo_id') or data.get('photo_id') or data.get('attachment_id')
+        photo_att_id = (
+            data.get('countermeasurePhotoId') or
+            data.get('countermeasure_photo_id') or
+            data.get('photo_id') or
+            data.get('attachment_id') or
+            data.get('photo_attachment_id')
+        )
         photo_b64 = data.get('countermeasurePhoto') or data.get('countermeasure_photo')
 
         photo_attachment = None

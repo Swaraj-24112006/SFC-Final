@@ -3,17 +3,18 @@ import io
 import logging
 from datetime import datetime, timedelta
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, serializers
+from rest_framework.exceptions import NotFound
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.throttling import UserRateThrottle
+from rest_framework.throttling import UserRateThrottle, ScopedRateThrottle
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 
 from .models import (
@@ -67,6 +68,7 @@ from .serializers import (
     ExecutiveAnalyticsResponseSerializer,
     SummaryAnalyticsResponseSerializer,
     PresentationDataResponseSerializer,
+    HealthCheckResponseSerializer,
 )
 from .selectors import (
     parse_analytics_filters,
@@ -125,6 +127,8 @@ class LookupsView(APIView):
     """
     permission_classes = [IsAuthenticated]
     serializer_class = LookupsResponseSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'lookups'
 
     @extend_schema(
         summary="Get System Lookups, Master Data, Enums, and Configuration",
@@ -272,7 +276,8 @@ class AttachmentUploadView(APIView):
     """
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
-    throttle_classes = [UserRateThrottle]
+    throttle_classes = [ScopedRateThrottle, UserRateThrottle]
+    throttle_scope = 'attachment_upload'
     serializer_class = AttachmentSerializer
 
     @extend_schema(
@@ -724,6 +729,13 @@ class ContainmentSubmitView(APIView):
         responses={200: RedFlagReadSerializer}
     )
     def post(self, request, pk):
+        flag = _fetch_refreshed_flag(pk)
+        actions = allowed_actions(request.user, flag)
+        if 'submitContainment' not in actions:
+            return Response(
+                {'success': False, 'error': 'You do not have permission to submit containment for this Red Flag.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -759,6 +771,14 @@ class ContainmentApproveView(APIView):
         responses={200: RedFlagReadSerializer}
     )
     def post(self, request, pk):
+        flag = _fetch_refreshed_flag(pk)
+        actions = allowed_actions(request.user, flag)
+        if 'approveContainment' not in actions:
+            return Response(
+                {'success': False, 'error': 'You do not have permission to approve containment for this Red Flag.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -778,8 +798,6 @@ class ContainmentApproveView(APIView):
         return Response(read_serializer.data, status=status.HTTP_200_OK)
 
 
-
-
 class ContainmentRejectView(APIView):
     """
     Quality Custodian rejects physical containment.
@@ -795,6 +813,14 @@ class ContainmentRejectView(APIView):
         responses={200: RedFlagReadSerializer}
     )
     def post(self, request, pk):
+        flag = _fetch_refreshed_flag(pk)
+        actions = allowed_actions(request.user, flag)
+        if 'rejectContainment' not in actions:
+            return Response(
+                {'success': False, 'error': 'You do not have permission to reject containment for this Red Flag.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -828,6 +854,14 @@ class RootCauseSubmitView(APIView):
         responses={200: RedFlagReadSerializer}
     )
     def post(self, request, pk):
+        flag = _fetch_refreshed_flag(pk)
+        actions = allowed_actions(request.user, flag)
+        if 'saveRootCause' not in actions:
+            return Response(
+                {'success': False, 'error': 'You do not have permission to save root cause for this Red Flag.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -866,6 +900,14 @@ class SustenanceStartView(APIView):
         responses={200: RedFlagReadSerializer}
     )
     def post(self, request, pk):
+        flag = _fetch_refreshed_flag(pk)
+        roles = user_roles(request.user)
+        if not (ROLE_PLANT_HEAD in roles or ROLE_QUALITY_CUSTODIAN in roles):
+            return Response(
+                {'success': False, 'error': 'You do not have permission to start sustenance for this Red Flag.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -902,6 +944,14 @@ class SustenanceCheckLogView(APIView):
         responses={200: RedFlagReadSerializer}
     )
     def post(self, request, pk, month):
+        flag = _fetch_refreshed_flag(pk)
+        roles = user_roles(request.user)
+        if not (ROLE_PLANT_HEAD in roles or ROLE_QUALITY_CUSTODIAN in roles):
+            return Response(
+                {'success': False, 'error': f'You do not have permission to log Month {month} audit for this Red Flag.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -973,6 +1023,14 @@ class RedFlagCloseView(APIView):
         responses={200: RedFlagReadSerializer}
     )
     def post(self, request, pk):
+        flag = _fetch_refreshed_flag(pk)
+        roles = user_roles(request.user)
+        if not (ROLE_PLANT_HEAD in roles or ROLE_QUALITY_CUSTODIAN in roles):
+            return Response(
+                {'success': False, 'error': 'You do not have permission to close this Red Flag.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -1098,6 +1156,8 @@ class RedFlagDashboardAnalyticsView(APIView):
     Returns comprehensive analytics for the interactive Red Flag dashboard.
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'analytics'
 
     @extend_schema(
         summary="Red Flag Dashboard Analytics",
@@ -1115,6 +1175,8 @@ class RedFlagExecutiveAnalyticsView(APIView):
     Returns executive deck analytics for presentation slides.
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'analytics'
 
     @extend_schema(
         summary="Red Flag Executive Analytics Deck",
@@ -1132,6 +1194,8 @@ class RedFlagSummaryAnalyticsView(APIView):
     Returns summary analytics for Global Dashboard and sidebar badge.
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'analytics'
 
     @extend_schema(
         summary="Red Flag Summary & Global Dashboard Analytics",
@@ -1149,6 +1213,8 @@ class RedFlagPresentationModeView(APIView):
     Returns 4-stage presentation data, queue, and allowed actions.
     """
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'analytics'
 
     @extend_schema(
         summary="Red Flag Presentation Mode Data",
@@ -1172,5 +1238,66 @@ class RedFlagPresentationModeView(APIView):
 
         data = get_presentation_data(flag, request.user, request.query_params)
         return Response(data, status=status.HTTP_200_OK)
+
+
+class HealthCheckView(APIView):
+    """
+    GET /api/redflags/health
+    Service health check verifying PostgreSQL database and MinIO storage connectivity.
+    Returns 200 OK if healthy, 503 Service Unavailable if any component is degraded.
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    @extend_schema(
+        summary="Service Health Check (Database + MinIO)",
+        responses={
+            200: HealthCheckResponseSerializer,
+            503: HealthCheckResponseSerializer,
+        }
+    )
+    def get(self, request):
+        db_ok = False
+        db_error = None
+        minio_ok = False
+        minio_error = None
+
+        # 1. Database check
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1;")
+                cursor.fetchone()
+            db_ok = True
+        except Exception as e:
+            db_error = str(e)
+            logger.error("Health check: DB failure: %s", e)
+
+        # 2. MinIO check
+        try:
+            from .storage import get_s3_client
+            client = get_s3_client()
+            client.list_buckets()
+            minio_ok = True
+        except Exception as e:
+            minio_error = str(e)
+            logger.error("Health check: MinIO failure: %s", e)
+
+        is_healthy = db_ok and minio_ok
+        status_code = status.HTTP_200_OK if is_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
+
+        payload = {
+            'status': 'healthy' if is_healthy else 'unhealthy',
+            'database': {
+                'status': 'connected' if db_ok else 'disconnected',
+                'error': db_error,
+            },
+            'minio': {
+                'status': 'connected' if minio_ok else 'disconnected',
+                'error': minio_error,
+            },
+            'timestamp': timezone.now().isoformat(),
+        }
+        return Response(payload, status=status_code)
+
 
 

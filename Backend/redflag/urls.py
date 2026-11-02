@@ -9,9 +9,11 @@ from .views import (
     EscalatePpsrView, ConvertKaizenView, LinkFiveSRedTagView,
     RedFlagDashboardAnalyticsView, RedFlagExecutiveAnalyticsView,
     RedFlagSummaryAnalyticsView, RedFlagPresentationModeView,
+    HealthCheckView,
 )
 
 urlpatterns = [
+    re_path(r'^health/?$', HealthCheckView.as_view(), name='redflag-health'),
     re_path(r'^me/?$', MeView.as_view(), name='redflag-me'),
     re_path(r'^lookups/?$', LookupsView.as_view(), name='redflag-lookups'),
     re_path(r'^attachments/?$', AttachmentUploadView.as_view(), name='redflag-attachments'),

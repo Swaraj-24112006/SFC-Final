@@ -2,7 +2,8 @@ import json
 import logging
 from djangorestframework_camel_case.render import CamelCaseJSONRenderer
 from rest_framework.views import exception_handler
-from rest_framework import status
+from rest_framework import status, exceptions
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,14 @@ def custom_exception_handler(exc, context):
       "details": { field: [msgs] }
     }
     """
+    if isinstance(exc, DjangoValidationError):
+        if hasattr(exc, 'message_dict'):
+            exc = exceptions.ValidationError(detail=exc.message_dict)
+        elif hasattr(exc, 'messages'):
+            exc = exceptions.ValidationError(detail={'non_field_errors': exc.messages})
+        else:
+            exc = exceptions.ValidationError(detail=str(exc))
+
     response = exception_handler(exc, context)
 
     if response is not None:

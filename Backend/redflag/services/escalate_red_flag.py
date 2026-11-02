@@ -3,14 +3,14 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 
-from ..models import (
+from redflag.models import (
     RedFlag, EscalationLink, Employee, StageHistory, RedFlagAuditLog, RedFlagConfig
 )
-from ..enums import (
+from redflag.enums import (
     Status, EscalationModule, EscalationState
 )
-from ..exceptions import UnprocessableEntity, BadGateway
-from ..permissions import (
+from redflag.exceptions import UnprocessableEntity, BadGateway
+from redflag.permissions import (
     user_roles, ROLE_PLANT_HEAD, ROLE_QUALITY_CUSTODIAN, ROLE_TARGET_PERSON
 )
 from .escalation import (

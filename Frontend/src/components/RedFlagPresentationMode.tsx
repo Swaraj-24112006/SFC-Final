@@ -32,6 +32,7 @@ import {
   PanelLeftOpen
 } from 'lucide-react';
 import PhotoZoomModal from './PhotoZoomModal';
+import { useRedFlag } from '../context/RedFlagContext';
 import { downloadElementAsPdf, triggerA4Print } from '../utils/pdfExporter';
 
 interface RedFlagPresentationModeProps {
@@ -124,6 +125,7 @@ export default function RedFlagPresentationMode({
   const [activeLeftTab, setActiveLeftTab] = useState<'slides' | 'queue'>('slides');
   const [isLeftPanelHidden, setIsLeftPanelHidden] = useState(false);
   const [activeRole, setActiveRole] = useState<RedFlagRole>(currentRole);
+  const { actions, showDevRoleSwitch } = useRedFlag();
 
   // Sync external role
   useEffect(() => {
@@ -185,67 +187,46 @@ export default function RedFlagPresentationMode({
   const canEditStage4 = isSuperAdmin || activeRole === 'Quality Custodian';
 
   // Quality Verification Actions
-  const handleVerifyContainment = () => {
-    updateFlag(redFlag.id, {
-      containmentStatus: 'Verified',
-      containmentVerifiedBy: activeRole === 'Quality Custodian' ? (redFlag.qaCustodian || 'Suresh Kumar (QA Lead)') : 'Plant Head Sign-Off',
-      containmentVerifiedDate: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      qaCustodianStatus: 'Containment Approved',
-      qaCustodianNotes: qaNotes || 'Immediate containment and physical quarantine verified on shopfloor.'
-    });
-    setActionSuccessMsg('Containment & Quarantine Approved by Quality Custodian');
-    setTimeout(() => setActionSuccessMsg(''), 3000);
+  const handleVerifyContainment = async () => {
+    try {
+      const updated = await actions.approveContainment(redFlag.id, qaNotes || 'Immediate containment and physical quarantine verified on shopfloor.', redFlag.rowVersion);
+      updateFlag(redFlag.id, updated);
+      setActionSuccessMsg('Containment & Quarantine Approved by Quality Custodian');
+      setTimeout(() => setActionSuccessMsg(''), 3000);
+    } catch (err: any) {
+      console.error('Verify containment failed:', err);
+      setActionSuccessMsg(`Error: ${err.message || 'Containment verification failed.'}`);
+      setTimeout(() => setActionSuccessMsg(''), 4000);
+    }
   };
 
-  const handleStartSustenance = () => {
-    const today = new Date();
-    const d1 = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const d2 = new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const d3 = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-    updateFlag(redFlag.id, {
-      status: 'Under-Sustenance',
-      sustenanceStartDate: today.toISOString().split('T')[0],
-      qaCustodianStatus: 'In Sustenance',
-      qaCustodianNotes: qaNotes || 'CAPA verified. Initiated 90-day 3-Month Sustenance watch period. Point kept OPEN.',
-      month1Check: redFlag.month1Check || { month: 1, targetDays: 30, scheduledDate: d1, status: 'Pending', auditor: redFlag.qaCustodian },
-      month2Check: redFlag.month2Check || { month: 2, targetDays: 60, scheduledDate: d2, status: 'Pending', auditor: redFlag.qaCustodian },
-      month3Check: redFlag.month3Check || { month: 3, targetDays: 90, scheduledDate: d3, status: 'Pending', auditor: redFlag.qaCustodian },
-      sustenanceAchieved: false
-    });
-    setActionSuccessMsg('3-Month Sustenance Initiated — Point Kept OPEN for 90 Days');
-    setTimeout(() => setActionSuccessMsg(''), 3000);
+  const handleStartSustenance = async () => {
+    try {
+      const updated = await actions.startSustenance(redFlag.id, { notes: qaNotes || 'CAPA verified. Initiated 90-day 3-Month Sustenance watch period. Point kept OPEN.' }, redFlag.rowVersion);
+      updateFlag(redFlag.id, updated);
+      setActionSuccessMsg('3-Month Sustenance Initiated — Point Kept OPEN for 90 Days');
+      setTimeout(() => setActionSuccessMsg(''), 3000);
+    } catch (err: any) {
+      console.error('Start sustenance failed:', err);
+      setActionSuccessMsg(`Error: ${err.message || 'Failed to start sustenance.'}`);
+      setTimeout(() => setActionSuccessMsg(''), 4000);
+    }
   };
 
-  const handleUpdateMonthAudit = (month: 1 | 2 | 3, status: 'Passed' | 'Recurrence Detected') => {
-    const today = new Date().toISOString().split('T')[0];
-    const key = `month${month}Check` as 'month1Check' | 'month2Check' | 'month3Check';
-    
-    const updatedCheck: MonthSustenanceCheck = {
-      month,
-      targetDays: month === 1 ? 30 : month === 2 ? 60 : 90,
-      scheduledDate: redFlag[key]?.scheduledDate || today,
-      auditDate: today,
-      auditor: redFlag.qaCustodian || 'Suresh Kumar (QA)',
-      status,
-      observations: `Month ${month} Sustenance check ${status}. Audited by Quality Custodian.`
-    };
-
-    const newM1Pass = (month === 1 ? status : redFlag.month1Check?.status) === 'Passed';
-    const newM2Pass = (month === 2 ? status : redFlag.month2Check?.status) === 'Passed';
-    const newM3Pass = (month === 3 ? status : redFlag.month3Check?.status) === 'Passed';
-    const allPassed = newM1Pass && newM2Pass && newM3Pass;
-
-    updateFlag(redFlag.id, {
-      [key]: updatedCheck,
-      sustenanceAchieved: allPassed,
-      status: allPassed ? 'Closed' : redFlag.status,
-      closureDate: allPassed ? today : redFlag.closureDate,
-      approvedByQA: allPassed ? (redFlag.qaCustodian || 'Suresh Kumar (QA Lead)') : redFlag.approvedByQA
-    });
-
-    setActionSuccessMsg(`Month ${month} Audit Logged: ${status}${allPassed ? ' — All 3 Months Passed! Red Flag Closed.' : ''}`);
-    setTimeout(() => setActionSuccessMsg(''), 3000);
+  const handleUpdateMonthAudit = async (month: 1 | 2 | 3, status: 'Passed' | 'Recurrence Detected') => {
+    try {
+      const updated = await actions.logAudit(redFlag.id, month, {
+        status,
+        observations: `Month ${month} Sustenance check ${status}. Audited by Quality Custodian.`
+      }, redFlag.rowVersion);
+      updateFlag(redFlag.id, updated);
+      setActionSuccessMsg(`Month ${month} Audit Logged: ${status}`);
+      setTimeout(() => setActionSuccessMsg(''), 3000);
+    } catch (err: any) {
+      console.error('Update month audit failed:', err);
+      setActionSuccessMsg(`Error: ${err.message || 'Audit logging failed.'}`);
+      setTimeout(() => setActionSuccessMsg(''), 4000);
+    }
   };
 
   const currentRedFlagIndex = flags.findIndex(r => r.id === redFlag.id);
@@ -709,8 +690,7 @@ export default function RedFlagPresentationMode({
 
                   <div className="aspect-video bg-rose-50/30 rounded-xl overflow-hidden border border-rose-200 flex items-center justify-center relative group">
                     {redFlag.evidencePhoto ? (
-                      <img
-                        src={redFlag.evidencePhoto}
+                      <img crossOrigin="anonymous" src={redFlag.evidencePhoto}
                         alt="Defect"
                         className="w-full h-full object-contain cursor-pointer transition-transform duration-300 group-hover:scale-105"
                         onClick={() => setZoomedPhoto({
@@ -780,7 +760,7 @@ export default function RedFlagPresentationMode({
                   </div>
                   <div className="aspect-video bg-rose-50/40 rounded-xl overflow-hidden border border-rose-200 flex items-center justify-center">
                     {redFlag.evidencePhoto ? (
-                      <img src={redFlag.evidencePhoto} alt="T0 Defect" className="w-full h-full object-contain" />
+                      <img crossOrigin="anonymous" src={redFlag.evidencePhoto} alt="T0 Defect" className="w-full h-full object-contain" />
                     ) : (
                       <span className="text-xs text-slate-400">No Photo</span>
                     )}
@@ -811,7 +791,7 @@ export default function RedFlagPresentationMode({
                   </div>
                   <div className="aspect-video bg-emerald-50/40 rounded-xl overflow-hidden border border-emerald-200 flex items-center justify-center">
                     {redFlag.countermeasurePhoto || redFlag.closureEvidence ? (
-                      <img src={redFlag.countermeasurePhoto || redFlag.closureEvidence} alt="T1 Containment" className="w-full h-full object-contain" />
+                      <img crossOrigin="anonymous" src={redFlag.countermeasurePhoto || redFlag.closureEvidence} alt="T1 Containment" className="w-full h-full object-contain" />
                     ) : (
                       <span className="text-xs text-amber-700 font-bold font-mono">Pending Target Person T1 Photo</span>
                     )}

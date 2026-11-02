@@ -234,7 +234,8 @@ class Phase6AnalyticsTests(APITestCase):
             red_flag=f4, closure_date=dt4.date(), closure_evidence=self.att_t1,
             validation_trial_shifts=3, validation_trial_results='Zero defect recurrences.',
             approved_by_qa=self.emp_qa, approved_by_qa_name=self.emp_qa.full_name,
-            approved_by_production=self.emp_plant_head, approved_by_production_name=self.emp_plant_head.full_name
+            approved_by_production=self.emp_plant_head, approved_by_production_name=self.emp_plant_head.full_name,
+            closed_by=self.user_qa
         )
 
         # Flag 5: In-Progress, Critical, Environment, Safety, OP-20, Target Ben, Prod -> Prod, 2026-05-05
@@ -259,7 +260,9 @@ class Phase6AnalyticsTests(APITestCase):
         RedFlagRootCause.objects.create(
             red_flag=f5, root_cause='Worn hydraulic fitting seal.',
             permanent_action='Install dual O-ring safety seal clamp.',
-            sop_updated=True
+            sop_updated=True,
+            submitted_by=self.emp_target_b,
+            submitted_by_name=self.emp_target_b.full_name
         )
 
         # Flag 6: Empty category_5m (Unclassified), Open, Moderate, Quality, OP-10, Target Bob, Prod -> QA, 2026-05-06
@@ -580,6 +583,9 @@ class Phase6AnalyticsTests(APITestCase):
         RedFlag.objects.bulk_create(bulk_flags)
 
         self.client.force_authenticate(user=self.user_qa)
+
+        # Warmup (client model loading & JIT)
+        self.client.get('/api/redflags/analytics/executive')
 
         # Test Dashboard analytics timing
         t0 = time.perf_counter()

@@ -3,10 +3,10 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 
-from ..models import RedFlag, RedFlagContainment, Employee, StageHistory, RedFlagAuditLog
-from ..enums import Status, ContainmentStatus, QaCustodianStatus
-from ..exceptions import UnprocessableEntity, ConflictError
-from ..permissions import user_roles, ROLE_PLANT_HEAD, ROLE_QUALITY_CUSTODIAN
+from redflag.models import RedFlag, RedFlagContainment, Employee, StageHistory, RedFlagAuditLog
+from redflag.enums import Status, ContainmentStatus, QaCustodianStatus
+from redflag.exceptions import UnprocessableEntity, ConflictError
+from redflag.permissions import user_roles, ROLE_PLANT_HEAD, ROLE_QUALITY_CUSTODIAN
 
 logger = logging.getLogger(__name__)
 

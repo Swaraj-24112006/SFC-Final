@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from django.db.models import (
-    Q, Count, Sum, Avg, F, Case, When, Value, CharField, IntegerField
+    Q, Count, Sum, Avg, F, Case, When, Value, CharField, IntegerField,
+    OuterRef, Subquery
 )
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -510,39 +511,7 @@ def get_dashboard_analytics(qs):
     }
 
     # 10. Drill Records (Capped at 5000 with truncated flag)
-    drill_qs = qs.select_related('plant').prefetch_related(
-        'containment_attempts'
-    ).order_by('-raised_at')[:5001]
-
-    raw_drill = list(drill_qs)
-    truncated = len(raw_drill) > 5000
-    display_drill = raw_drill[:5000]
-
-    drill_records = []
-    for rf in display_drill:
-        # Get current containment suspect qty
-        curr_cont = None
-        for a in rf.containment_attempts.all():
-            if a.is_current:
-                curr_cont = a
-                break
-
-        suspect_qty = curr_cont.suspect_qty if curr_cont else 0
-        drill_status = 'Completed' if rf.status == Status.CLOSED else ('Open' if rf.status == Status.OPEN else 'In-Progress')
-
-        drill_records.append({
-            'id': str(rf.id),
-            'code': rf.red_flag_no,
-            'title': rf.description,
-            'level1': getattr(rf.plant, 'code', None) or rf.plant_name,
-            'level2': rf.line_name,
-            'level3': rf.category_5m or rf.red_flag_type or 'Method',
-            'owner': rf.target_person_name or rf.raised_by_name,
-            'status': drill_status,
-            'rawStatus': rf.status,
-            'period': rf.raised_at.strftime('%Y-%m-%d') if rf.raised_at else '',
-            'metricValue': suspect_qty,
-        })
+    drill_data = _build_drill_records(qs)
 
     return {
         'kpis': kpis,
@@ -554,11 +523,53 @@ def get_dashboard_analytics(qs):
         'targetPersons': target_persons,
         'stationHotspots': station_hotspots,
         'sustenanceCohort': sustenance_cohort,
-        'drillRecords': {
-            'records': drill_records,
-            'truncated': truncated,
-            'totalCount': len(drill_records),
-        }
+        'drillRecords': drill_data,
+    }
+
+
+def _build_drill_records(qs):
+    """
+    Constructs the 5000-capped drill down dataset in SfcStandardRecord shape.
+    Uses SQL Subquery and .values() to eliminate ORM instantiation overhead.
+    """
+    current_cont_qty = RedFlagContainment.objects.filter(
+        red_flag=OuterRef('pk'), is_current=True
+    ).values('suspect_qty')[:1]
+
+    drill_qs = qs.annotate(
+        current_suspect_qty=Coalesce(Subquery(current_cont_qty), 0)
+    ).values(
+        'id', 'red_flag_no', 'description', 'plant__code', 'plant_name',
+        'line_name', 'category_5m', 'red_flag_type', 'target_person_name',
+        'raised_by_name', 'status', 'raised_at', 'current_suspect_qty'
+    ).order_by('-raised_at')[:5001]
+
+    raw_drill = list(drill_qs)
+    truncated = len(raw_drill) > 5000
+    display_drill = raw_drill[:5000]
+
+    drill_records = []
+    for row in display_drill:
+        st = row['status']
+        drill_status = 'Completed' if st == Status.CLOSED else ('Open' if st == Status.OPEN else 'In-Progress')
+        drill_records.append({
+            'id': str(row['id']),
+            'code': row['red_flag_no'],
+            'title': row['description'],
+            'level1': row['plant__code'] or row['plant_name'],
+            'level2': row['line_name'],
+            'level3': row['category_5m'] or row['red_flag_type'] or 'Method',
+            'owner': row['target_person_name'] or row['raised_by_name'],
+            'status': drill_status,
+            'rawStatus': st,
+            'period': row['raised_at'].strftime('%Y-%m-%d') if row['raised_at'] else '',
+            'metricValue': row['current_suspect_qty'],
+        })
+
+    return {
+        'records': drill_records,
+        'truncated': truncated,
+        'totalCount': len(drill_records),
     }
 
 
@@ -567,13 +578,20 @@ def get_executive_analytics(qs):
     Computes analytics block for GET /api/redflags/analytics/executive
     Used by the presentation deck in RedFlagSystem.
     """
-    total = qs.count()
-    open_count = qs.filter(status=Status.OPEN).count()
-    in_sustenance = qs.filter(
-        Q(status=Status.UNDER_SUSTENANCE) |
-        (Q(sustenance_start_date__isnull=False) & ~Q(status=Status.CLOSED))
-    ).count()
-    closed_sustained = qs.filter(status=Status.CLOSED, sustenance_achieved=True).count()
+    score_agg = qs.aggregate(
+        total=Count('id'),
+        open_count=Count('id', filter=Q(status=Status.OPEN)),
+        in_sustenance=Count(
+            'id',
+            filter=Q(status=Status.UNDER_SUSTENANCE) |
+                   (Q(sustenance_start_date__isnull=False) & ~Q(status=Status.CLOSED))
+        ),
+        closed_sustained=Count('id', filter=Q(status=Status.CLOSED, sustenance_achieved=True))
+    )
+    total = score_agg['total'] or 0
+    open_count = score_agg['open_count'] or 0
+    in_sustenance = score_agg['in_sustenance'] or 0
+    closed_sustained = score_agg['closed_sustained'] or 0
     containment_rate = round(((total - open_count) / total) * 100) if total > 0 else 100
 
     scorecard = {
@@ -732,35 +750,7 @@ def get_summary_analytics(qs):
     sidebar_badge = open_count + by_status.get(Status.IN_PROGRESS, 0)
 
     # Drill records for global dashboard (capped at 5000)
-    drill_qs = qs.select_related('plant').prefetch_related('containment_attempts').order_by('-raised_at')[:5001]
-    raw_drill = list(drill_qs)
-    truncated = len(raw_drill) > 5000
-    display_drill = raw_drill[:5000]
-
-    drill_records = []
-    for rf in display_drill:
-        curr_cont = None
-        for a in rf.containment_attempts.all():
-            if a.is_current:
-                curr_cont = a
-                break
-
-        suspect_qty = curr_cont.suspect_qty if curr_cont else 0
-        drill_status = 'Completed' if rf.status == Status.CLOSED else ('Open' if rf.status == Status.OPEN else 'In-Progress')
-
-        drill_records.append({
-            'id': str(rf.id),
-            'code': rf.red_flag_no,
-            'title': rf.description,
-            'level1': getattr(rf.plant, 'code', None) or rf.plant_name,
-            'level2': rf.line_name,
-            'level3': rf.category_5m or rf.red_flag_type or 'Method',
-            'owner': rf.target_person_name or rf.raised_by_name,
-            'status': drill_status,
-            'rawStatus': rf.status,
-            'period': rf.raised_at.strftime('%Y-%m-%d') if rf.raised_at else '',
-            'metricValue': suspect_qty,
-        })
+    drill_data = _build_drill_records(qs)
 
     return {
         'byStatus': by_status,
@@ -768,11 +758,7 @@ def get_summary_analytics(qs):
         'unresolvedCount': unresolved_count,
         'closedCount': closed_count,
         'sidebarBadge': sidebar_badge,
-        'drillRecords': {
-            'records': drill_records,
-            'truncated': truncated,
-            'totalCount': len(drill_records),
-        }
+        'drillRecords': drill_data,
     }
 
 
@@ -923,7 +909,7 @@ def get_presentation_data(flag, user, filter_params=None):
             'status': chk.status,
             'scheduledDate': chk.scheduled_date.strftime('%Y-%m-%d') if chk.scheduled_date else None,
             'auditDate': chk.audit_date.strftime('%Y-%m-%d') if chk.audit_date else None,
-            'auditedBy': chk.audited_by_name or None,
+            'auditedBy': chk.auditor_name or None,
             'observations': chk.observations or '',
         }
 

@@ -109,7 +109,10 @@ export default function App() {
       // Fetch Redflags
       const resR = await fetch('/api/redflags');
       const dataR = await resR.json();
-      if (dataR.success) setRedFlags(dataR.data);
+      if (dataR.success) {
+        const flags = dataR.data?.results || dataR.data || [];
+        setRedFlags(flags);
+      }
 
       // Fetch 5S Audits
       const resF = await fetch('/api/fivesaudits');
@@ -251,9 +254,11 @@ export default function App() {
       const res = await fetch(`/api/redflags/${id}/escalate-ppsr`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        setRedFlags(prev => prev.map(r => r.id === id ? data.redFlag : r));
-        setPpsrReports(prev => [data.ppsr, ...prev]);
-        alert(`Red Flag escalated to 8D Practical Problem Solving Report: ${data.ppsr.ppsrNo}`);
+        const rf = data.data?.redFlag || data.redFlag;
+        const ppsr = data.data?.ppsr || data.ppsr;
+        if (rf) setRedFlags(prev => prev.map(r => r.id === id ? rf : r));
+        if (ppsr) setPpsrReports(prev => [ppsr, ...prev]);
+        alert(`Red Flag escalated to 8D Practical Problem Solving Report: ${ppsr?.ppsrNo || rf?.linkedPpsrNo || id}`);
       }
     } catch (err) {
       console.error('Error escalating to PPSR:', err);
@@ -265,9 +270,11 @@ export default function App() {
       const res = await fetch(`/api/redflags/${id}/convert-kaizen`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        setRedFlags(prev => prev.map(r => r.id === id ? data.redFlag : r));
-        setKaizens(prev => [data.kaizen, ...prev]);
-        alert(`Red Flag converted to Kaizen Poka-Yoke sheet: ${data.kaizen.srNo}`);
+        const rf = data.data?.redFlag || data.redFlag;
+        const kaizen = data.data?.kaizen || data.kaizen;
+        if (rf) setRedFlags(prev => prev.map(r => r.id === id ? rf : r));
+        if (kaizen) setKaizens(prev => [kaizen, ...prev]);
+        alert(`Red Flag converted to Kaizen Poka-Yoke sheet: ${kaizen?.srNo || rf?.linkedKaizenNo || id}`);
       }
     } catch (err) {
       console.error('Error converting to Kaizen:', err);
@@ -279,9 +286,11 @@ export default function App() {
       const res = await fetch(`/api/redflags/${id}/link-fives`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        setRedFlags(prev => prev.map(r => r.id === id ? data.redFlag : r));
-        setFiveSRedTags(prev => [data.redTag, ...prev]);
-        alert(`Red Flag material linked to 5S Red Tag Holding register: ${data.redTag.tagNo}`);
+        const rf = data.data?.redFlag || data.redFlag;
+        const redTag = data.data?.redTag || data.redTag;
+        if (rf) setRedFlags(prev => prev.map(r => r.id === id ? rf : r));
+        if (redTag) setFiveSRedTags(prev => [redTag, ...prev]);
+        alert(`Red Flag material linked to 5S Red Tag Holding register: ${redTag?.tagNo || rf?.linkedFiveSRedTagNo || id}`);
       }
     } catch (err) {
       console.error('Error linking to 5S:', err);

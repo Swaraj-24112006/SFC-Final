@@ -438,6 +438,15 @@ class RedFlagAuditLog(BaseModel):
         flag_no = self.red_flag.red_flag_no if self.red_flag else 'N/A'
         return f"{flag_no} - {self.action} by {self.actor}"
 
+    def save(self, *args, **kwargs):
+        # Prevent updates on existing records
+        if self.pk and RedFlagAuditLog.objects.filter(pk=self.pk).exists():
+            raise ValueError("RedFlagAuditLog records are append-only and cannot be updated.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("RedFlagAuditLog records cannot be deleted.")
+
 
 # ===================== Phase 3 & 4: Containment, Root Cause, Sustenance, Closure =====================
 

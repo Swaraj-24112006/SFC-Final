@@ -56,6 +56,11 @@ def validate_and_process_image(file_obj, max_mb=None):
     if size_mb > max_mb:
         raise ValidationError(f"File too large ({size_mb:.1f} MB). Maximum is {max_mb} MB.")
 
+    # Explicitly reject SVG / XML content before image decoding
+    lower_snippet = raw_bytes[:1024].lower()
+    if b'<svg' in lower_snippet or (b'<?xml' in lower_snippet and b'<svg' in raw_bytes[:4096].lower()):
+        raise ValidationError("SVG images are not accepted.")
+
     # Validate with Pillow (not just headers)
     try:
         img = Image.open(io.BytesIO(raw_bytes))

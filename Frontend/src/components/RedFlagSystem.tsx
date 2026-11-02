@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { RedFlag, RedFlagRole } from '../types';
 import CameraModal from './CameraModal';
+import { useRedFlag } from '../context/RedFlagContext';
 import RedFlagActionModal from './RedFlagActionModal';
 import RedFlagPrintSheet from './RedFlagPrintSheet';
 import RedFlagSheetForm from './RedFlagSheetForm';
@@ -94,6 +95,7 @@ export default function RedFlagSystem({
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
   const [formWorkflowStage, setFormWorkflowStage] = useState<'initiator' | 'containment' | 'rootcause' | 'quality'>('initiator');
   const [formSelectedFlagId, setFormSelectedFlagId] = useState<string | null>(null);
+  const { actions, showDevRoleSwitch, totalCount, currentPage, pageSize, setPage, setFilters } = useRedFlag();
 
   // Handle external deep actions from Sidebar or Dashboard
   React.useEffect(() => {
@@ -120,49 +122,21 @@ export default function RedFlagSystem({
     }
   }, [initialAction]);
 
-  // Export to CSV function
-  const exportToCSV = () => {
-    const headers = [
-      "Sr No", "Red Flag No", "Raised Date", "Raised By", "Originating Dept", 
-      "Target Dept", "Target Person", "Plant Area", "Station", "Model",
-      "Type", "5M Category", "Severity", "Description", "Quarantined WIP", 
-      "QA Custodian", "Status", "Sustenance Start", "M1 Audit", "M2 Audit", "M3 Audit", "Sustenance Achieved"
-    ];
-
-    const rows = filteredFlags.map((rf, idx) => [
-      rf.srNo || String(idx + 1),
-      rf.redFlagNo || `RF-${idx + 1}`,
-      rf.raisedDate,
-      `"${rf.raisedBy || ''}"`,
-      `"${rf.raisedByDepartment || ''}"`,
-      `"${rf.targetDepartment || rf.responsibleDepartment || ''}"`,
-      `"${rf.targetPerson || ''}"`,
-      `"${rf.lineAreaName}"`,
-      `"${rf.stationName}"`,
-      `"${rf.modelName}"`,
-      rf.redFlagType,
-      rf.category5M || 'Method',
-      `"${rf.severity || ''}"`,
-      `"${(rf.redFlagDescription || '').replace(/"/g, '""')}"`,
-      rf.suspectQtyQuarantined || 0,
-      `"${rf.qaCustodian || 'Suresh Kumar (QA)'}"`,
-      rf.status,
-      rf.sustenanceStartDate || '',
-      rf.month1Check?.status || '',
-      rf.month2Check?.status || '',
-      rf.month3Check?.status || '',
-      rf.sustenanceAchieved ? 'YES' : 'NO'
-    ]);
-
-    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `SFC_RedFlags_Master_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Export to CSV function via backend endpoint
+  const exportToCSV = async () => {
+    try {
+      await actions.downloadCsv({
+        search: searchTerm,
+        status: statusFilter !== 'All' ? statusFilter : '',
+        severity: severityFilter !== 'All' ? severityFilter : '',
+        category_5m: category5MFilter !== 'All' ? category5MFilter : '',
+        target_dept: targetDeptFilter !== 'All' ? targetDeptFilter : '',
+        originating_dept: raisedByDeptFilter !== 'All' ? raisedByDeptFilter : ''
+      });
+    } catch (err: any) {
+      console.error('CSV export failed:', err);
+      alert(`Export failed: ${err.message || 'Server error'}`);
+    }
   };
 
   // Filtered List calculation for Tracker
@@ -297,7 +271,7 @@ export default function RedFlagSystem({
 
               {rf.evidencePhoto && (
                 <div className="aspect-video bg-black/40 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
-                  <img src={rf.evidencePhoto} alt="Evidence" className="h-full object-contain" />
+                  <img crossOrigin="anonymous" src={rf.evidencePhoto} alt="Evidence" className="h-full object-contain" />
                 </div>
               )}
             </div>
@@ -456,6 +430,7 @@ export default function RedFlagSystem({
 
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Active Role Selector (RBAC) */}
+          {showDevRoleSwitch && (
           <div className="flex items-center gap-2 bg-slate-50 border border-slate-300 px-3 py-1.5 rounded-lg shadow-2xs">
             <UserCheck className="w-4 h-4 text-rose-600 shrink-0" />
             <div className="text-left">
@@ -483,6 +458,7 @@ export default function RedFlagSystem({
                currentRole === 'Quality Custodian' ? 'Stage 4 Custodian' : 'Super Admin'}
             </span>
           </div>
+          )}
 
           <button
             onClick={exportToCSV}
@@ -1146,15 +1122,21 @@ export default function RedFlagSystem({
                                 <Printer className="w-3.5 h-3.5" />
                               </button>
 
-                              {onDeleteRedFlag && (
+                              {(!rf.allowedActions || rf.allowedActions.includes('delete')) && (
                                 <button
-                                  onClick={() => {
-                                    if (confirm(`Are you sure you want to delete Red Flag ${rf.redFlagNo}?`)) {
-                                      onDeleteRedFlag(rf.id);
+                                  onClick={async () => {
+                                    const reason = window.prompt(`Please provide a reason for soft-deleting Red Flag ${rf.redFlagNo}:`);
+                                    if (!reason || !reason.trim()) return;
+                                    try {
+                                      await actions.deleteRedFlag(rf.id, reason.trim());
+                                      if (onDeleteRedFlag) onDeleteRedFlag(rf.id);
+                                    } catch (err: any) {
+                                      console.error('Delete failed:', err);
+                                      alert(err.message || 'Failed to delete Red Flag.');
                                     }
                                   }}
                                   className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                                  title="Delete entry"
+                                  title="Soft delete entry (Audit preserved)"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -1233,6 +1215,34 @@ export default function RedFlagSystem({
             </div>
           )}
 
+          {/* Pagination Bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200 text-xs text-slate-600">
+            <span className="font-mono">
+              Showing {totalCount > 0 ? (currentPage - 1) * pageSize + 1 : 0} to {Math.min(currentPage * pageSize, totalCount)} of {totalCount} Red Flags
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setPage(currentPage - 1)}
+                className="px-3 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition cursor-pointer"
+              >
+                ← Previous
+              </button>
+              <span className="px-2 font-mono font-bold">
+                Page {currentPage} of {Math.max(1, Math.ceil(totalCount / pageSize))}
+              </span>
+              <button
+                type="button"
+                disabled={currentPage >= Math.ceil(totalCount / pageSize)}
+                onClick={() => setPage(currentPage + 1)}
+                className="px-3 py-1.5 border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition cursor-pointer"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+
         </div>
       )}
 
@@ -1276,8 +1286,7 @@ export default function RedFlagSystem({
           onClick={() => setPreviewPhoto(null)}
         >
           <div className="relative max-w-2xl max-h-[90vh] bg-white rounded-lg p-2 overflow-hidden shadow-2xl">
-            <img
-              src={previewPhoto}
+            <img crossOrigin="anonymous" src={previewPhoto}
               alt="Evidence zoom"
               className="max-h-[80vh] w-auto mx-auto object-contain rounded"
             />

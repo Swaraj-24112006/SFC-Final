@@ -24,6 +24,8 @@ import {
   ChevronRight
 } from 'lucide-react';
 import CameraModal from './CameraModal';
+import { useRedFlag } from '../context/RedFlagContext';
+import * as api from '../api/redflags';
 
 interface RedFlagSheetFormProps {
   redFlags?: RedFlag[];
@@ -95,6 +97,10 @@ export default function RedFlagSheetForm({
     resolveStage(initialWorkflowStage)
   );
   const [activeRole, setActiveRole] = useState<RedFlagRole>(currentRole);
+  const { actions, currentUser, showDevRoleSwitch } = useRedFlag();
+  const [beforeAttachmentId, setBeforeAttachmentId] = useState<string | null>(null);
+  const [afterAttachmentId, setAfterAttachmentId] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
 
   useEffect(() => {
     if (initialWorkflowStage) {
@@ -240,10 +246,11 @@ export default function RedFlagSheetForm({
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
 
   // Role permissions
-  const isSuperAdmin = activeRole === 'Plant Head';
-  const isInitiatorAuthorized = isSuperAdmin || activeRole === 'Initiator';
-  const isTargetAuthorized = isSuperAdmin || activeRole === 'Target Person';
-  const isQualityAuthorized = isSuperAdmin || activeRole === 'Quality Custodian';
+  const isSuperAdmin = activeRole === 'Plant Head' || currentUser?.isPlantHead;
+  const isInitiatorAuthorized = isSuperAdmin || activeRole === 'Initiator' || !activeFlag;
+  const isTargetAuthorized = !activeFlag || (activeFlag.allowedActions ? activeFlag.allowedActions.includes('submitContainment') : (isSuperAdmin || activeRole === 'Target Person'));
+  const isRcaAuthorized = !activeFlag || (activeFlag.allowedActions ? activeFlag.allowedActions.includes('saveRootCause') : true);
+  const isQualityAuthorized = !activeFlag || (activeFlag.allowedActions ? (activeFlag.allowedActions.includes('approveContainment') || activeFlag.allowedActions.includes('startSustenance') || activeFlag.allowedActions.includes('rejectContainment')) : (isSuperAdmin || activeRole === 'Quality Custodian' || currentUser?.isQualityCustodian));
 
   // Demo presets
   const loadInitiatorPreset = (presetType: 'torque' | 'leak') => {
@@ -320,23 +327,33 @@ export default function RedFlagSheetForm({
     setError(null);
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>, target: 'before' | 'after') => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: 'before' | 'after') => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === 'string') {
-          if (target === 'before') setPhotoBefore(reader.result);
-          else setPhotoAfter(reader.result);
+      setIsUploadingPhoto(true);
+      try {
+        const kind = target === 'before' ? 'evidence_photo' : 'countermeasure_photo';
+        const res = await actions.uploadAttachment(file, kind);
+        if (target === 'before') {
+          setBeforeAttachmentId(res.id);
+          setPhotoBefore(res.url);
+        } else {
+          setAfterAttachmentId(res.id);
+          setPhotoAfter(res.url);
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err: any) {
+        console.error('Photo upload failed:', err);
+        setError(err.message || 'Photo upload failed.');
+      } finally {
+        setIsUploadingPhoto(false);
+      }
     }
   };
 
   // Submit Stage 1: Initiator Form
-  const handleInitiatorSubmit = (e: React.FormEvent) => {
+  const handleInitiatorSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     if (!redFlagDescription.trim()) {
       setError('Initiator must describe the defect/anomaly observed at the station.');
       return;
@@ -347,52 +364,61 @@ export default function RedFlagSheetForm({
       return;
     }
 
+    let attachmentId = beforeAttachmentId;
+    if (!attachmentId && photoBefore && photoBefore.startsWith('data:')) {
+      try {
+        const b = await (await fetch(photoBefore)).blob();
+        const up = await actions.uploadAttachment(b, 'evidence_photo');
+        attachmentId = up.id;
+        setBeforeAttachmentId(up.id);
+      } catch (err) {
+        console.warn('Could not upload preset/base64 attachment to server:', err);
+      }
+    }
+
     const formattedRaisedTs = raisedTimestamp.replace('T', ' ');
 
-    onAddRedFlag({
-      raisedBy,
-      raisedByDepartment,
-      raisedByRole,
-      raisedDate: formattedRaisedTs.split(' ')[0],
-      raisedTimestamp: formattedRaisedTs,
-      targetDepartment,
-      targetPerson,
-      mfName,
-      lineAreaName,
-      modelName,
-      stationName,
-      redFlagType,
-      redFlagSubType,
-      severity,
-      category5M,
-      responsibleDepartment: targetDepartment,
-      redFlagDescription,
-      containmentAction: '',
-      suspectQtyQuarantined: 0,
-      containmentStatus: 'Pending',
-      status: 'Open',
-      qaCustodian,
-      qaCustodianStatus: 'Review Pending',
-      qaCustodianNotes: `Raised by ${raisedBy} (${raisedByDepartment}) at ${formattedRaisedTs}. Assigned to Target Person: ${targetPerson} (${targetDepartment}) for Stage 2 Containment.`,
-      repetitiveOccurrence,
-      closureResponsibility: qaCustodian,
-      targetDate: targetDate || new Date(Date.now() + 5 * 24 * 3600 * 1000).toISOString().split('T')[0],
-      evidencePhoto: photoBefore,
-      countermeasurePhoto: undefined,
-      sustenanceAchieved: false
-    });
+    try {
+      const created = await actions.raiseRedFlag({
+        description: redFlagDescription,
+        evidenceAttachmentId: attachmentId || undefined,
+        evidencePhoto: photoBefore,
+        plant: mfName,
+        line: lineAreaName,
+        station: stationName,
+        model: modelName,
+        redFlagType,
+        redFlagSubType,
+        severity,
+        category5M,
+        targetDepartment,
+        targetPerson,
+        qaCustodian,
+        repetitiveOccurrence,
+        targetDate: targetDate || undefined,
+        raisedBy,
+        raisedByDepartment,
+        raisedByRole,
+        raisedTimestamp: formattedRaisedTs
+      });
 
-    setSuccessBanner(`Stage 1 Complete: Red Flag raised with Point-of-Defect Photo and routed to Target Person (${targetPerson}) for Stage 2 Containment.`);
-    setTimeout(() => {
-      setSuccessBanner(null);
-      if (onNavigateToTracker) onNavigateToTracker();
-    }, 1200);
+      onAddRedFlag(created);
+      setSuccessBanner(`Stage 1 Complete: Red Flag raised with Point-of-Defect Photo and routed to Target Person (${targetPerson}) for Stage 2 Containment.`);
+      setTimeout(() => {
+        setSuccessBanner(null);
+        if (onNavigateToTracker) onNavigateToTracker();
+      }, 1200);
+    } catch (err: any) {
+      console.error('Failed to raise Red Flag:', err);
+      setError(err.message || 'Failed to raise Red Flag. Please check required fields.');
+    }
   };
 
   // Submit Stage 2: Containment Action
-  const handleContainmentSubmit = (e: React.FormEvent) => {
+  const handleContainmentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeFlag || !onUpdateRedFlag) return;
+    if (!activeFlag) return;
+    setError(null);
 
     if (!containmentAction.trim()) {
       setError('Target Person must describe immediate containment & quarantine actions taken.');
@@ -405,42 +431,56 @@ export default function RedFlagSheetForm({
       return;
     }
 
+    let attachmentId = afterAttachmentId;
+    if (!attachmentId && photoAfter && photoAfter.startsWith('data:')) {
+      try {
+        const b = await (await fetch(photoAfter)).blob();
+        const up = await actions.uploadAttachment(b, 'countermeasure_photo');
+        attachmentId = up.id;
+        setAfterAttachmentId(up.id);
+      } catch (err) {
+        console.warn('Could not upload containment photo blob:', err);
+      }
+    }
+
     const formattedContainmentTs = containmentTimestamp.replace('T', ' ');
     const raisedTs = activeFlag.raisedTimestamp || `${activeFlag.raisedDate} 08:30`;
     const gapLabel = computeTimeGapLabel(raisedTs, formattedContainmentTs);
 
-    onUpdateRedFlag(activeFlag.id, {
-      actionTakenBy: targetActionBy || activeFlag.targetPerson,
-      actionTakenDate: formattedContainmentTs.split(' ')[0],
-      containmentTimestamp: formattedContainmentTs,
-      containmentTimeGap: gapLabel,
-      suspectQtyQuarantined: Number(suspectQtyQuarantined) || 0,
-      quarantineTagNo,
-      quarantineLocation,
-      sortingQtyInspected: Number(sortingQtyInspected) || 0,
-      sortingQtyOk: Number(sortingQtyOk) || 0,
-      sortingQtyRejected: Number(sortingQtyRejected) || 0,
-      containmentAction,
-      immediateActionTaken: containmentAction,
-      countermeasurePhoto: photoAfter,
-      containmentStatus: 'Contained',
-      status: 'Contained',
-      qaCustodianStatus: 'Review Pending',
-      qaCustodianNotes: `Stage 2 Containment Action logged by Target Person (${targetActionBy || activeFlag.targetPerson}) at ${formattedContainmentTs} (${gapLabel}). Ready for Stage 3 Root Cause / CAPA.`
-    });
+    try {
+      const updated = await actions.submitContainment(activeFlag.id, {
+        containmentAction,
+        suspectQtyQuarantined: Number(suspectQtyQuarantined) || 0,
+        quarantineTagNo,
+        quarantineLocation,
+        sortingQtyInspected: Number(sortingQtyInspected) || 0,
+        sortingQtyOk: Number(sortingQtyOk) || 0,
+        sortingQtyRejected: Number(sortingQtyRejected) || 0,
+        countermeasureAttachmentId: attachmentId || undefined,
+        countermeasurePhoto: photoAfter,
+        actionTakenBy: targetActionBy || activeFlag.targetPerson,
+        containmentTimestamp: formattedContainmentTs,
+        rowVersion: activeFlag.rowVersion
+      });
 
-    setError(null);
-    setSuccessBanner(`Stage 2 Complete: Containment Photo & Quarantine Controls submitted (${gapLabel}). Transitioning to Stage 3 Root Cause & CAPA.`);
-    setTimeout(() => {
-      setSuccessBanner(null);
-      setWorkflowStage('rootcause');
-    }, 1000);
+      if (onUpdateRedFlag) onUpdateRedFlag(activeFlag.id, updated);
+      setError(null);
+      setSuccessBanner(`Stage 2 Complete: Containment Photo & Quarantine Controls submitted (${gapLabel}). Transitioning to Stage 3 Root Cause & CAPA.`);
+      setTimeout(() => {
+        setSuccessBanner(null);
+        setWorkflowStage('rootcause');
+      }, 1000);
+    } catch (err: any) {
+      console.error('Failed to submit containment:', err);
+      setError(err.message || 'Failed to submit containment action.');
+    }
   };
 
   // Submit Stage 3: Root Cause & Permanent Action Taken (CAPA)
-  const handleRootCauseSubmit = (e: React.FormEvent) => {
+  const handleRootCauseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeFlag || !onUpdateRedFlag) return;
+    if (!activeFlag) return;
+    setError(null);
 
     if (!rootCause5Why.trim()) {
       setError('Please provide the 5-Why root cause statement.');
@@ -451,100 +491,76 @@ export default function RedFlagSheetForm({
       return;
     }
 
-    onUpdateRedFlag(activeFlag.id, {
-      why1,
-      why2,
-      why3,
-      why4,
-      rootCause5Why,
-      systematicPermanentAction,
-      targetDate: targetDate || activeFlag.targetDate,
-      standardizationUpdates: {
-        sopUpdated,
-        pfmeaUpdated,
-        controlPlanUpdated,
-        onePointLessonIssued
-      },
-      status: 'In-Progress',
-      qaCustodianStatus: 'CAPA Verified',
-      qaCustodianNotes: `Stage 3 CAPA submitted by Target Person / CFT. Systematic Poka-Yoke deployed. Awaiting Stage 4 Quality Custodian Verification & 3M Sustenance.`
-    });
-
-    setError(null);
-    setSuccessBanner('Stage 3 Complete: 5-Why Root Cause & Permanent Action (CAPA) submitted. Ready for Stage 4 Quality Verification.');
-    setTimeout(() => {
-      setSuccessBanner(null);
-      setWorkflowStage('quality');
-    }, 1000);
-  };
-
-  // Submit Stage 4: Quality Verification & 3-Month Sustenance
-  const handleQualitySubmit = (decision: 'approve_containment' | 'start_sustenance' | 'reject_containment') => {
-    if (!activeFlag || !onUpdateRedFlag) return;
-
-    const todayStr = new Date().toISOString().split('T')[0];
-    const nowTs = nowFormatted().replace('T', ' ');
-
-    if (decision === 'reject_containment') {
-      onUpdateRedFlag(activeFlag.id, {
-        containmentStatus: 'Pending',
-        status: 'Open',
-        qaCustodianStatus: 'Review Pending',
-        qaCustodianNotes: `REJECTED BY QA CUSTODIAN (${qaVerifierName}): ${qaVerificationNotes || 'Containment or quarantine boundary inadequate. Target Person must re-execute Stage 2.'}`
-      });
-      setSuccessBanner('Containment rejected by QA Custodian. Sent back to Target Person for Stage 2.');
-      setTimeout(() => {
-        setSuccessBanner(null);
-        setWorkflowStage('containment');
-      }, 1000);
-      return;
-    }
-
-    if (decision === 'approve_containment') {
-      onUpdateRedFlag(activeFlag.id, {
-        containmentStatus: 'Verified',
-        containmentVerifiedBy: qaVerifierName,
-        containmentVerifiedDate: nowTs,
-        qaCustodian: qaVerifierName,
-        qaCustodianStatus: 'Containment Approved',
-        qaCustodianNotes: qaVerificationNotes || `Containment Photo & Quarantine (${activeFlag.suspectQtyQuarantined || 0} pcs) verified by Quality Custodian.`
-      });
-      setSuccessBanner('Quality Custodian approved Target Person Containment Action.');
-      setTimeout(() => setSuccessBanner(null), 2000);
-      return;
-    }
-
-    if (decision === 'start_sustenance') {
-      const today = new Date();
-      const d1 = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const d2 = new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const d3 = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-      onUpdateRedFlag(activeFlag.id, {
-        containmentStatus: 'Verified',
-        containmentVerifiedBy: qaVerifierName,
-        containmentVerifiedDate: activeFlag.containmentVerifiedDate || nowTs,
-        qaCustodian: qaVerifierName,
-        qaCustodianStatus: 'In Sustenance',
-        qaCustodianNotes: qaVerificationNotes || 'Stage 4: Quality verified CAPA & initiated mandatory 90-day 3-Month Sustenance watch period. Point kept OPEN.',
-        status: 'Under-Sustenance',
-        sustenanceStartDate: activeFlag.sustenanceStartDate || todayStr,
-        month1Check: activeFlag.month1Check || { month: 1, targetDays: 30, scheduledDate: d1, status: 'Pending', auditor: qaVerifierName },
-        month2Check: activeFlag.month2Check || { month: 2, targetDays: 60, scheduledDate: d2, status: 'Pending', auditor: qaVerifierName },
-        month3Check: activeFlag.month3Check || { month: 3, targetDays: 90, scheduledDate: d3, status: 'Pending', auditor: qaVerifierName },
-        sustenanceAchieved: false,
+    try {
+      const updated = await actions.saveRootCause(activeFlag.id, {
+        why1,
+        why2,
+        why3,
+        why4,
+        rootCause5Why,
+        systematicPermanentAction,
+        targetDate: targetDate || activeFlag.targetDate,
         standardizationUpdates: {
           sopUpdated,
           pfmeaUpdated,
           controlPlanUpdated,
           onePointLessonIssued
-        }
+        },
+        rowVersion: activeFlag.rowVersion
       });
-      setSuccessBanner('Quality Custodian verified CAPA & initiated 3-Month Sustenance (Point kept OPEN for 90 days)!');
+
+      if (onUpdateRedFlag) onUpdateRedFlag(activeFlag.id, updated);
+      setError(null);
+      setSuccessBanner('Stage 3 Complete: 5-Why Root Cause & Permanent Action (CAPA) submitted. Ready for Stage 4 Quality Verification.');
       setTimeout(() => {
         setSuccessBanner(null);
-        if (onNavigateToTracker) onNavigateToTracker();
-      }, 1200);
+        setWorkflowStage('quality');
+      }, 1000);
+    } catch (err: any) {
+      console.error('Failed to save root cause:', err);
+      setError(err.message || 'Failed to submit root cause analysis.');
+    }
+  };
+
+  // Submit Stage 4: Quality Verification & 3-Month Sustenance
+  const handleQualitySubmit = async (decision: 'approve_containment' | 'start_sustenance' | 'reject_containment') => {
+    if (!activeFlag) return;
+    setError(null);
+
+    try {
+      if (decision === 'reject_containment') {
+        const reason = qaVerificationNotes || 'Containment or quarantine boundary inadequate. Target Person must re-execute Stage 2.';
+        const updated = await actions.rejectContainment(activeFlag.id, reason, activeFlag.rowVersion);
+        if (onUpdateRedFlag) onUpdateRedFlag(activeFlag.id, updated);
+        setSuccessBanner('Containment rejected by QA Custodian. Sent back to Target Person for Stage 2.');
+        setTimeout(() => {
+          setSuccessBanner(null);
+          setWorkflowStage('containment');
+        }, 1000);
+        return;
+      }
+
+      if (decision === 'approve_containment') {
+        const updated = await actions.approveContainment(activeFlag.id, qaVerificationNotes, activeFlag.rowVersion);
+        if (onUpdateRedFlag) onUpdateRedFlag(activeFlag.id, updated);
+        setSuccessBanner('Quality Custodian approved Target Person Containment Action.');
+        setTimeout(() => setSuccessBanner(null), 2000);
+        return;
+      }
+
+      if (decision === 'start_sustenance') {
+        const updated = await actions.startSustenance(activeFlag.id, { notes: qaVerificationNotes }, activeFlag.rowVersion);
+        if (onUpdateRedFlag) onUpdateRedFlag(activeFlag.id, updated);
+        setSuccessBanner('QA Custodian verified CAPA and initiated 3-Month Sustenance tracking (Point Kept OPEN).');
+        setTimeout(() => {
+          setSuccessBanner(null);
+          if (onNavigateToTracker) onNavigateToTracker();
+        }, 1200);
+        return;
+      }
+    } catch (err: any) {
+      console.error('Failed Quality action:', err);
+      setError(err.message || 'Failed to perform quality action.');
     }
   };
 
@@ -573,22 +589,24 @@ export default function RedFlagSheetForm({
         </div>
 
         {/* Role-Based Access Indicator & Switcher */}
-        <div className="flex items-center space-x-3 bg-slate-900 border border-slate-800 px-3.5 py-2 rounded-2xl">
-          <div className="flex items-center space-x-1.5 text-xs text-slate-300 font-mono">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span className="text-[10px] uppercase font-bold text-slate-400">Active Role:</span>
-            <select
-              value={activeRole}
-              onChange={(e) => handleRoleChange(e.target.value as RedFlagRole)}
-              className="bg-slate-800 text-white font-bold text-xs rounded px-2 py-1 border border-slate-700 outline-none cursor-pointer"
-            >
-              <option value="Initiator">Initiator (Originator)</option>
-              <option value="Target Person">Target Person (Assignee)</option>
-              <option value="Quality Custodian">Quality Custodian (QA)</option>
-              <option value="Plant Head">Plant Head (Super-Admin)</option>
-            </select>
+        {showDevRoleSwitch && (
+          <div className="flex items-center space-x-3 bg-slate-900 border border-slate-800 px-3.5 py-2 rounded-2xl">
+            <div className="flex items-center space-x-1.5 text-xs text-slate-300 font-mono">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span className="text-[10px] uppercase font-bold text-slate-400">Active Role:</span>
+              <select
+                value={activeRole}
+                onChange={(e) => handleRoleChange(e.target.value as RedFlagRole)}
+                className="bg-slate-800 text-white font-bold text-xs rounded px-2 py-1 border border-slate-700 outline-none cursor-pointer"
+              >
+                <option value="Initiator">Initiator (Originator)</option>
+                <option value="Target Person">Target Person (Assignee)</option>
+                <option value="Quality Custodian">Quality Custodian (QA)</option>
+                <option value="Plant Head">Plant Head (Super-Admin)</option>
+              </select>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* 4-STAGE WORKFLOW SELECTOR TABS */}
@@ -965,7 +983,7 @@ export default function RedFlagSheetForm({
                   </span>
                 </div>
                 <div className="relative border-2 border-dashed border-rose-200 rounded-xl overflow-hidden bg-rose-50/40 aspect-video flex items-center justify-center">
-                  <img src={photoBefore} alt="Defect Before" className="w-full h-full object-contain" />
+                  <img crossOrigin="anonymous" src={photoBefore} alt="Defect Before" className="w-full h-full object-contain" />
                 </div>
                 <div className="flex items-center space-x-2">
                   <button
@@ -1118,7 +1136,7 @@ export default function RedFlagSheetForm({
                     </div>
                     <div className="aspect-video bg-rose-50/30 rounded-xl overflow-hidden border border-rose-200 flex items-center justify-center">
                       {activeFlag.evidencePhoto ? (
-                        <img src={activeFlag.evidencePhoto} alt="T0" className="w-full h-full object-contain" />
+                        <img crossOrigin="anonymous" src={activeFlag.evidencePhoto} alt="T0" className="w-full h-full object-contain" />
                       ) : (
                         <span className="text-xs text-slate-400">No Photo</span>
                       )}
@@ -1135,7 +1153,7 @@ export default function RedFlagSheetForm({
                       <span className="text-[10px] text-slate-500">{containmentTimestamp.replace('T', ' ')}</span>
                     </div>
                     <div className="aspect-video bg-emerald-50/30 rounded-xl overflow-hidden border border-emerald-200 flex items-center justify-center">
-                      <img src={photoAfter} alt="T1" className="w-full h-full object-contain" />
+                      <img crossOrigin="anonymous" src={photoAfter} alt="T1" className="w-full h-full object-contain" />
                     </div>
                     <div className="flex items-center space-x-2 pt-1">
                       <button
@@ -1537,7 +1555,7 @@ export default function RedFlagSheetForm({
                     </span>
                     <div className="aspect-video bg-rose-50/40 rounded-xl overflow-hidden border border-rose-100 flex items-center justify-center">
                       {activeFlag.evidencePhoto ? (
-                        <img src={activeFlag.evidencePhoto} alt="T0" className="w-full h-full object-contain" />
+                        <img crossOrigin="anonymous" src={activeFlag.evidencePhoto} alt="T0" className="w-full h-full object-contain" />
                       ) : (
                         <span className="text-xs text-slate-400">No Photo</span>
                       )}
@@ -1553,7 +1571,7 @@ export default function RedFlagSheetForm({
                     </span>
                     <div className="aspect-video bg-emerald-50/40 rounded-xl overflow-hidden border border-emerald-100 flex items-center justify-center">
                       {activeFlag.countermeasurePhoto || activeFlag.closureEvidence ? (
-                        <img src={activeFlag.countermeasurePhoto || activeFlag.closureEvidence} alt="T1" className="w-full h-full object-contain" />
+                        <img crossOrigin="anonymous" src={activeFlag.countermeasurePhoto || activeFlag.closureEvidence} alt="T1" className="w-full h-full object-contain" />
                       ) : (
                         <span className="text-xs text-amber-700 font-bold">Pending Target Containment Photo</span>
                       )}

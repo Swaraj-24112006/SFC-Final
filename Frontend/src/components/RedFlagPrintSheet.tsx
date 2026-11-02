@@ -129,8 +129,7 @@ export default function RedFlagPrintSheet({ redFlag, onClose }: RedFlagPrintShee
               <div className="border border-slate-300 p-1 bg-slate-50 text-center flex flex-col items-center justify-center min-h-[90px]">
                 <span className="text-[9px] font-bold text-slate-500 uppercase block mb-1">Point-of-Defect (Before)</span>
                 {redFlag.evidencePhoto ? (
-                  <img
-                    src={redFlag.evidencePhoto}
+                  <img crossOrigin="anonymous" src={redFlag.evidencePhoto}
                     alt="Defect"
                     className="max-h-24 max-w-full rounded border border-slate-300 object-contain"
                   />

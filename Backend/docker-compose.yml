@@ -41,7 +41,8 @@ services:
       /bin/sh -c "
       /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ACCESS_KEY:-minioadmin} ${MINIO_SECRET_KEY:-minioadmin};
       /usr/bin/mc mb --ignore-existing myminio/redflag-evidence;
-      /usr/bin/mc anonymous set download myminio/redflag-evidence;
+      /usr/bin/mc version enable myminio/redflag-evidence;
+      /usr/bin/mc anonymous set none myminio/redflag-evidence;
       exit 0;
       "
 

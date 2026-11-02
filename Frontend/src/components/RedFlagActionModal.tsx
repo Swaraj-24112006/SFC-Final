@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { RedFlag, MonthSustenanceCheck, RedFlagRole } from '../types';
 import CameraModal from './CameraModal';
+import { useRedFlag } from '../context/RedFlagContext';
+import * as api from '../api/redflags';
 
 interface RedFlagActionModalProps {
   redFlag: RedFlag;
@@ -58,6 +60,10 @@ export default function RedFlagActionModal({
   const [showCamera, setShowCamera] = useState<'evidence' | 'closure' | null>(null);
   const [isEscalating, setIsEscalating] = useState<string | null>(null);
   const [saveToast, setSaveToast] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const { actions, currentUser, showDevRoleSwitch } = useRedFlag();
+  const [earlyCloseDialogOpen, setEarlyCloseDialogOpen] = useState<boolean>(false);
+  const [earlyCloseReasonInput, setEarlyCloseReasonInput] = useState<string>('');
 
   // Form states initialized with redFlag values
   const [formData, setFormData] = useState({
@@ -138,128 +144,145 @@ export default function RedFlagActionModal({
     status: redFlag.status || 'Open'
   });
 
-  const handleSaveAll = (targetStatus?: RedFlag['status']) => {
-    const finalStatus = targetStatus || formData.status;
+  const handleSaveAll = async (targetStatus?: RedFlag['status']) => {
+    setSaveError(null);
+    try {
+      let updatedFlag: RedFlag = redFlag;
 
-    // Check if user is closing without achieving 3-month sustenance
-    if (finalStatus === 'Closed' && !formData.sustenanceAchieved) {
-      const confirmClose = window.confirm(
-        "QA CUSTODIAN NOTICE:\nIATF rule requires keeping the point OPEN until 3-month (90 days) sustenance is achieved with zero recurrence.\n\nAre you sure you want to authorize early closure?"
-      );
-      if (!confirmClose) return;
+      if (targetStatus === 'Closed') {
+        updatedFlag = await actions.closeRedFlag(redFlag.id, {
+          validationTrialShifts: Number(formData.validationTrialShifts) || 5,
+          validationTrialResults: formData.validationTrialResults,
+          closureEvidence: formData.closureEvidence,
+          rowVersion: redFlag.rowVersion
+        });
+      } else if (activeTab === 'details') {
+        updatedFlag = await actions.patchRedFlag(redFlag.id, {
+          raisedBy: formData.raisedBy,
+          raisedByDepartment: formData.raisedByDepartment,
+          targetDepartment: formData.targetDepartment,
+          targetPerson: formData.targetPerson,
+          qaCustodian: formData.qaCustodian,
+          qaCustodianNotes: formData.qaCustodianNotes,
+          severity: formData.severity as any,
+          category5M: formData.category5M as any,
+          redFlagType: formData.redFlagType as any,
+          redFlagSubType: formData.redFlagSubType,
+          redFlagDescription: formData.redFlagDescription,
+          evidencePhoto: formData.evidencePhoto,
+          teamLeader: formData.teamLeader,
+          closureResponsibility: formData.closureResponsibility,
+          targetDate: formData.targetDate,
+        }, redFlag.rowVersion);
+      } else if (activeTab === 'containment') {
+        updatedFlag = await actions.submitContainment(redFlag.id, {
+          containmentAction: formData.containmentAction,
+          suspectQtyQuarantined: Number(formData.suspectQtyQuarantined) || 0,
+          quarantineTagNo: formData.quarantineTagNo,
+          quarantineLocation: formData.quarantineLocation,
+          sortingQtyInspected: Number(formData.sortingQtyInspected) || 0,
+          sortingQtyOk: Number(formData.sortingQtyOk) || 0,
+          sortingQtyRejected: Number(formData.sortingQtyRejected) || 0,
+          countermeasurePhoto: formData.countermeasurePhoto,
+          actionTakenBy: formData.actionTakenBy,
+          containmentTimestamp: formData.containmentTimestamp,
+          rowVersion: redFlag.rowVersion
+        });
+      } else if (activeTab === 'rca') {
+        updatedFlag = await actions.saveRootCause(redFlag.id, {
+          why1: formData.why1,
+          why2: formData.why2,
+          why3: formData.why3,
+          why4: formData.why4,
+          rootCause5Why: formData.rootCause5Why,
+          systematicPermanentAction: formData.systematicPermanentAction,
+          targetDate: formData.targetDate,
+          standardizationUpdates: {
+            sopUpdated: formData.sopUpdated,
+            pfmeaUpdated: formData.pfmeaUpdated,
+            controlPlanUpdated: formData.controlPlanUpdated,
+            onePointLessonIssued: formData.onePointLessonIssued
+          },
+          rowVersion: redFlag.rowVersion
+        });
+      } else if (activeTab === 'sustenance') {
+        if (targetStatus === 'Under-Sustenance') {
+          updatedFlag = await actions.startSustenance(redFlag.id, { notes: formData.qaCustodianNotes }, redFlag.rowVersion);
+        } else {
+          updatedFlag = await actions.patchRedFlag(redFlag.id, {
+            qaCustodianNotes: formData.qaCustodianNotes,
+            validationTrialShifts: Number(formData.validationTrialShifts) || 0,
+            validationTrialResults: formData.validationTrialResults,
+            closureEvidence: formData.closureEvidence
+          }, redFlag.rowVersion);
+        }
+      }
+
+      onUpdate(redFlag.id, updatedFlag);
+      setFormData(prev => ({ ...prev, ...updatedFlag }));
+      setSaveToast(true);
+      setTimeout(() => setSaveToast(false), 2000);
+    } catch (err: any) {
+      console.error('Save failed:', err);
+      setSaveError(err.message || 'Save failed.');
     }
-
-    const updated: Partial<RedFlag> = {
-      raisedBy: formData.raisedBy,
-      raisedByDepartment: formData.raisedByDepartment,
-      targetDepartment: formData.targetDepartment,
-      targetPerson: formData.targetPerson,
-      qaCustodian: formData.qaCustodian,
-      qaCustodianNotes: formData.qaCustodianNotes,
-
-      severity: formData.severity as any,
-      category5M: formData.category5M as any,
-      redFlagType: formData.redFlagType as any,
-      redFlagSubType: formData.redFlagSubType,
-      redFlagDescription: formData.redFlagDescription,
-      evidencePhoto: formData.evidencePhoto,
-      teamLeader: formData.teamLeader,
-      closureResponsibility: formData.closureResponsibility,
-      targetDate: formData.targetDate,
-
-      raisedTimestamp: formData.raisedTimestamp,
-      containmentTimestamp: formData.containmentTimestamp,
-      containmentTimeGap: formData.containmentTimeGap,
-      containmentStatus: formData.containmentStatus as any,
-      suspectQtyQuarantined: Number(formData.suspectQtyQuarantined) || 0,
-      quarantineTagNo: formData.quarantineTagNo,
-      quarantineLocation: formData.quarantineLocation,
-      sortingQtyInspected: Number(formData.sortingQtyInspected) || 0,
-      sortingQtyOk: Number(formData.sortingQtyOk) || 0,
-      sortingQtyRejected: Number(formData.sortingQtyRejected) || 0,
-      containmentAction: formData.containmentAction,
-      countermeasurePhoto: formData.countermeasurePhoto,
-      actionTakenBy: formData.actionTakenBy,
-      containmentVerifiedBy: formData.containmentVerifiedBy,
-      containmentVerifiedDate: formData.containmentVerifiedDate,
-      immediateActionTaken: formData.containmentAction,
-
-      why1: formData.why1,
-      why2: formData.why2,
-      why3: formData.why3,
-      why4: formData.why4,
-      rootCause5Why: formData.rootCause5Why,
-      systematicPermanentAction: formData.systematicPermanentAction,
-      standardizationUpdates: {
-        sopUpdated: formData.sopUpdated,
-        pfmeaUpdated: formData.pfmeaUpdated,
-        controlPlanUpdated: formData.controlPlanUpdated,
-        onePointLessonIssued: formData.onePointLessonIssued
-      },
-
-      sustenanceStartDate: formData.sustenanceStartDate,
-      month1Check: formData.month1Check,
-      month2Check: formData.month2Check,
-      month3Check: formData.month3Check,
-      sustenanceAchieved: formData.sustenanceAchieved,
-
-      closureEvidence: formData.closureEvidence,
-      closureDate: finalStatus === 'Closed' ? (formData.closureDate || new Date().toISOString().split('T')[0]) : '',
-      approvedByQA: finalStatus === 'Closed' ? (formData.approvedByQA || formData.qaCustodian) : '',
-      approvedByProduction: finalStatus === 'Closed' ? (formData.approvedByProduction || 'Amit Mehta (Plant Head)') : '',
-      status: finalStatus
-    };
-
-    onUpdate(redFlag.id, updated);
-    setSaveToast(true);
-    setTimeout(() => setSaveToast(false), 2000);
   };
 
-  const updateMonthAudit = (month: 1 | 2 | 3, status: 'Passed' | 'Recurrence Detected' | 'Pending', observations?: string) => {
-    const today = new Date().toISOString().split('T')[0];
-    const key = `month${month}Check` as 'month1Check' | 'month2Check' | 'month3Check';
-    
-    const updatedCheck: MonthSustenanceCheck = {
-      month,
-      targetDays: month === 1 ? 30 : month === 2 ? 60 : 90,
-      scheduledDate: formData[key]?.scheduledDate || today,
-      auditDate: status !== 'Pending' ? today : undefined,
-      auditor: formData.qaCustodian || 'QA Custodian',
-      status,
-      observations: observations || formData[key]?.observations || `Month ${month} Sustenance check ${status}.`
-    };
-
-    const newChecks = {
-      ...formData,
-      [key]: updatedCheck
-    };
-
-    // Check if all 3 passed
-    const m1Pass = (month === 1 ? status : newChecks.month1Check?.status) === 'Passed';
-    const m2Pass = (month === 2 ? status : newChecks.month2Check?.status) === 'Passed';
-    const m3Pass = (month === 3 ? status : newChecks.month3Check?.status) === 'Passed';
-
-    const allPassed = m1Pass && m2Pass && m3Pass;
-    newChecks.sustenanceAchieved = allPassed;
-
-    setFormData(newChecks);
+  const handleEarlyClosureSubmit = async () => {
+    if (!earlyCloseReasonInput.trim()) {
+      alert('Early closure requires a valid justification reason.');
+      return;
+    }
+    setSaveError(null);
+    try {
+      const updatedFlag = await actions.closeRedFlag(redFlag.id, {
+        earlyClosureReason: earlyCloseReasonInput.trim(),
+        validationTrialShifts: Number(formData.validationTrialShifts) || 5,
+        validationTrialResults: formData.validationTrialResults,
+        closureEvidence: formData.closureEvidence,
+        rowVersion: redFlag.rowVersion
+      });
+      onUpdate(redFlag.id, updatedFlag);
+      setFormData(prev => ({ ...prev, ...updatedFlag }));
+      setEarlyCloseDialogOpen(false);
+      setEarlyCloseReasonInput('');
+      setSaveToast(true);
+      setTimeout(() => setSaveToast(false), 2000);
+    } catch (err: any) {
+      console.error('Early close failed:', err);
+      setSaveError(err.message || 'Early closure failed.');
+    }
   };
 
-  const handleStartSustenance = () => {
-    const today = new Date();
-    const d1 = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const d2 = new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const d3 = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const updateMonthAudit = async (month: 1 | 2 | 3, status: 'Passed' | 'Recurrence Detected' | 'Pending', observations?: string) => {
+    setSaveError(null);
+    try {
+      const updatedFlag = await actions.logAudit(redFlag.id, month, {
+        status,
+        observations: observations || `Month ${month} Sustenance check ${status}.`
+      }, redFlag.rowVersion);
+      onUpdate(redFlag.id, updatedFlag);
+      setFormData(prev => ({ ...prev, ...updatedFlag }));
+      setSaveToast(true);
+      setTimeout(() => setSaveToast(false), 2000);
+    } catch (err: any) {
+      console.error('Log audit failed:', err);
+      setSaveError(err.message || `Month ${month} audit logging failed.`);
+    }
+  };
 
-    setFormData({
-      ...formData,
-      status: 'Under-Sustenance',
-      sustenanceStartDate: today.toISOString().split('T')[0],
-      month1Check: { month: 1, targetDays: 30, scheduledDate: d1, status: 'Pending', auditor: formData.qaCustodian },
-      month2Check: { month: 2, targetDays: 60, scheduledDate: d2, status: 'Pending', auditor: formData.qaCustodian },
-      month3Check: { month: 3, targetDays: 90, scheduledDate: d3, status: 'Pending', auditor: formData.qaCustodian },
-      sustenanceAchieved: false
-    });
+  const handleStartSustenance = async () => {
+    setSaveError(null);
+    try {
+      const updatedFlag = await actions.startSustenance(redFlag.id, { notes: formData.qaCustodianNotes }, redFlag.rowVersion);
+      onUpdate(redFlag.id, updatedFlag);
+      setFormData(prev => ({ ...prev, ...updatedFlag }));
+      setSaveToast(true);
+      setTimeout(() => setSaveToast(false), 2000);
+    } catch (err: any) {
+      console.error('Start sustenance failed:', err);
+      setSaveError(err.message || 'Failed to start sustenance.');
+    }
   };
 
   const handleEscalatePPSR = async () => {
@@ -609,8 +632,7 @@ export default function RedFlagActionModal({
                   <div className="flex items-center gap-4">
                     {formData.evidencePhoto ? (
                       <div className="relative group">
-                        <img
-                          src={formData.evidencePhoto}
+                        <img crossOrigin="anonymous" src={formData.evidencePhoto}
                           alt="Evidence"
                           className="w-24 h-24 object-cover rounded border border-slate-200"
                         />
@@ -675,7 +697,7 @@ export default function RedFlagActionModal({
                   </div>
                   <div className="aspect-video bg-rose-50/30 rounded border border-rose-100 flex items-center justify-center overflow-hidden">
                     {formData.evidencePhoto ? (
-                      <img src={formData.evidencePhoto} alt="Point of Defect" className="w-full h-full object-contain" />
+                      <img crossOrigin="anonymous" src={formData.evidencePhoto} alt="Point of Defect" className="w-full h-full object-contain" />
                     ) : (
                       <span className="text-xs text-slate-400">No Point-of-Defect Photo</span>
                     )}
@@ -689,7 +711,7 @@ export default function RedFlagActionModal({
                   </div>
                   <div className="aspect-video bg-emerald-50/30 rounded border border-emerald-100 flex items-center justify-center overflow-hidden">
                     {formData.countermeasurePhoto ? (
-                      <img src={formData.countermeasurePhoto} alt="Containment" className="w-full h-full object-contain" />
+                      <img crossOrigin="anonymous" src={formData.countermeasurePhoto} alt="Containment" className="w-full h-full object-contain" />
                     ) : (
                       <span className="text-xs text-amber-700 font-semibold">Pending Target Person Containment Photo</span>
                     )}
@@ -1356,6 +1378,53 @@ export default function RedFlagActionModal({
         </div>
 
       </div>
+
+            {/* Early Closure Modal for Plant Head */}
+      {earlyCloseDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+              <h3 className="text-sm font-bold text-slate-900 uppercase">Authorize Early Closure</h3>
+              <button onClick={() => setEarlyCloseDialogOpen(false)} className="text-slate-400 hover:text-slate-700">✕</button>
+            </div>
+            <p className="text-xs text-slate-600">
+              IATF rule requires keeping the point OPEN until 3-month (90 days) sustenance is achieved with zero recurrence.
+              As <strong>Plant Head</strong>, please provide the formal justification reason for authorizing early closure:
+            </p>
+            <textarea
+              value={earlyCloseReasonInput}
+              onChange={(e) => setEarlyCloseReasonInput(e.target.value)}
+              placeholder="Enter formal justification (e.g. Line discontinued, permanent tooling redesign with zero recurrence)..."
+              rows={4}
+              className="w-full text-xs p-3 border border-slate-300 rounded-xl outline-none focus:border-slate-900"
+            />
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setEarlyCloseDialogOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleEarlyClosureSubmit}
+                className="px-4 py-2 text-xs font-bold text-white bg-purple-700 hover:bg-purple-800 rounded-lg"
+              >
+                Confirm Early Closure
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Error Banner */}
+      {saveError && (
+        <div className="fixed bottom-6 right-6 z-50 bg-rose-600 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-2 text-xs font-bold animate-shake">
+          <span>⚠️ {saveError}</span>
+          <button onClick={() => setSaveError(null)} className="ml-2">✕</button>
+        </div>
+      )}
 
       {/* Camera Capture Modal */}
       {showCamera && (

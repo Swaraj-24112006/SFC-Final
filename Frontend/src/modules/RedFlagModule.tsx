@@ -1,6 +1,7 @@
 import React from 'react';
 import RedFlagSystem from '../components/RedFlagSystem';
 import { RedFlag, UserPersona } from '../types';
+import { RedFlagProvider } from '../context/RedFlagContext';
 
 interface RedFlagModuleProps {
   redFlags: RedFlag[];
@@ -18,36 +19,10 @@ interface RedFlagModuleProps {
   onToggleSidebar?: () => void;
 }
 
-export default function RedFlagModule({
-  redFlags,
-  onAddRedFlag,
-  onUpdateRedFlag,
-  onDeleteRedFlag,
-  onEscalateToPpsr,
-  onConvertToKaizen,
-  onLinkToFiveS,
-  currentPersona,
-  initialAction,
-  onClearInitialAction,
-  onNavigateToModule,
-  isSidebarHidden,
-  onToggleSidebar
-}: RedFlagModuleProps) {
+export default function RedFlagModule(props: RedFlagModuleProps) {
   return (
-    <RedFlagSystem
-      redFlags={redFlags}
-      onAddRedFlag={onAddRedFlag}
-      onUpdateRedFlag={onUpdateRedFlag}
-      onDeleteRedFlag={onDeleteRedFlag}
-      onEscalateToPpsr={onEscalateToPpsr}
-      onConvertToKaizen={onConvertToKaizen}
-      onLinkToFiveS={onLinkToFiveS}
-      currentPersona={currentPersona}
-      initialAction={initialAction}
-      onClearInitialAction={onClearInitialAction}
-      onNavigateToModule={onNavigateToModule}
-      isSidebarHidden={isSidebarHidden}
-      onToggleSidebar={onToggleSidebar}
-    />
+    <RedFlagProvider initialFlags={props.redFlags}>
+      <RedFlagSystem {...props} />
+    </RedFlagProvider>
   );
 }
